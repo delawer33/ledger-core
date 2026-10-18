@@ -13,7 +13,6 @@ from ledger.errors import (
     AccountNotFoundError,
     CurrencyMismatchError,
     EntriesNotZeroSumError,
-    IdempotencyKeyInUseError,
     InsufficientFundsError,
     InvalidEntriesError,
     TransactionAlreadyReversedError,
@@ -55,8 +54,6 @@ def post_transaction(
         _validate_currency(accounts)
         _validate_funds(lines, accounts)
 
-        if Transaction.objects.filter(source_system=source_system, key=key).exists():
-            raise IdempotencyKeyInUseError(f"idempotency key {source_system}/{key} already used")
         posted = Transaction.objects.create(
             kind=kind, source_system=source_system, key=key, reversal_of=reversal_of
         )

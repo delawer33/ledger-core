@@ -48,10 +48,10 @@ class InsufficientFundsError(LedgerError):
     code = "insufficient_funds"
 
 
-class IdempotencyKeyInUseError(LedgerError):
-    """Placeholder until the idempotency protocol replays the stored response."""
+class IdempotencyKeyReusedError(LedgerError):
+    """The Idempotency Key was already used for a different request."""
 
-    code = "idempotency_key_in_use"
+    code = "idempotency_key_reused"
     status = HTTPStatus.CONFLICT
 
 

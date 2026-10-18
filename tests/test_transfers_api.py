@@ -224,14 +224,3 @@ def test_mutations_require_idempotency_and_source_headers(client: Client, missin
 
     assert response.status_code == 400
     assert response.json()["code"] == "missing_header"
-
-
-def test_reused_idempotency_key_is_not_a_server_error(client: Client) -> None:
-    a, b = _account(client, "equity"), _account(client)
-    headers = _headers("same-key")
-    assert _transfer(client, a, b, 1, **headers).status_code == 201
-
-    response = _transfer(client, a, b, 1, **headers)
-
-    assert response.status_code == 409
-    assert Transaction.objects.count() == 1

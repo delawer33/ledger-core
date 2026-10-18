@@ -145,4 +145,4 @@ def test_reversal_reuses_the_idempotency_key_guard(client: Client) -> None:
     response = _reverse(client, other, **headers)
 
     assert response.status_code == 409
-    assert response.json()["code"] == "idempotency_key_in_use"
+    assert response.json()["code"] == "idempotency_key_reused"

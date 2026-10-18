@@ -1,11 +1,12 @@
 from typing import Annotated, Literal
 
-from django.http import HttpRequest
-from ninja import Router, Schema, Status
+from django.http import HttpRequest, HttpResponse
+from ninja import Router, Schema
 from pydantic import Field
 
 from ledger.api_headers import MutationHeaders
 from ledger.errors import TransactionNotFoundError
+from ledger.idempotency.service import StoredReply, fingerprint, run_idempotent
 from ledger.posting import service
 from ledger.posting.models import Transaction
 from ledger.schemas import Amount
@@ -33,23 +34,31 @@ class TransactionOut(Schema):
 
 
 @router.post("", response={201: TransactionOut})
-def create_transaction(request: HttpRequest, payload: TransactionIn) -> Status[TransactionOut]:
+def create_transaction(request: HttpRequest, payload: TransactionIn) -> HttpResponse:
     headers = MutationHeaders.from_request(request)
-    posted = service.post_transaction(
-        kind=payload.kind,
-        lines=[service.EntryLine(e.account_id, e.amount) for e in payload.entries],
-        source_system=headers.source_system,
-        key=headers.key,
-    )
-    return Status(
-        201,
-        TransactionOut(
+
+    def operation() -> StoredReply:
+        posted = service.post_transaction(
+            kind=payload.kind,
+            lines=[service.EntryLine(e.account_id, e.amount) for e in payload.entries],
+            source_system=headers.source_system,
+            key=headers.key,
+        )
+        out = TransactionOut(
             id=posted.pk,
             kind=posted.kind,
             entries=payload.entries,
             posted_at=posted.posted_at.isoformat(),
-        ),
+        )
+        return StoredReply(status=201, body=out.model_dump_json())
+
+    reply = run_idempotent(
+        source_system=headers.source_system,
+        key=headers.key,
+        request_hash=fingerprint(request.path, payload.model_dump_json()),
+        operation=operation,
     )
+    return HttpResponse(reply.body, status=reply.status, content_type="application/json")
 
 
 @router.get("/{transaction_id}", response=TransactionOut)
@@ -61,12 +70,22 @@ def get_transaction(request: HttpRequest, transaction_id: int) -> TransactionOut
 
 
 @router.post("/{transaction_id}/reverse", response={201: TransactionOut})
-def reverse_transaction(request: HttpRequest, transaction_id: int) -> Status[TransactionOut]:
+def reverse_transaction(request: HttpRequest, transaction_id: int) -> HttpResponse:
     headers = MutationHeaders.from_request(request)
-    reversal = service.reverse_transaction(
-        transaction_id=transaction_id, source_system=headers.source_system, key=headers.key
+
+    def operation() -> StoredReply:
+        reversal = service.reverse_transaction(
+            transaction_id=transaction_id, source_system=headers.source_system, key=headers.key
+        )
+        return StoredReply(status=201, body=_to_out(reversal).model_dump_json())
+
+    reply = run_idempotent(
+        source_system=headers.source_system,
+        key=headers.key,
+        request_hash=fingerprint(request.path, ""),
+        operation=operation,
     )
-    return Status(201, _to_out(reversal))
+    return HttpResponse(reply.body, status=reply.status, content_type="application/json")
 
 
 def _to_out(found: Transaction) -> TransactionOut:
