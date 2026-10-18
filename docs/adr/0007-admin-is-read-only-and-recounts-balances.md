@@ -19,8 +19,11 @@ Posted и Available в списке счетов считаются подзап
 списка делает группировку по Entry, что приемлемо для инструмента оператора, а
 не для горячего пути.
 
-Суперпользователя для dev создаёт `seed` из `DJANGO_SUPERUSER_*` (значения в
-`.env.example`); при `ENVIRONMENT=production` он ничего не создаёт. Статику
+Суперпользователя создаёт `seed` только если явно заданы и `DJANGO_SUPERUSER_USERNAME`, и
+`DJANGO_SUPERUSER_PASSWORD` (читаются через settings; в compose и `.env.example` значений по
+умолчанию нет); при `ENVIRONMENT=production` он ничего не создаёт. Compose публикует API только
+на `127.0.0.1`. Для сессионной админки включены `CsrfViewMiddleware` и
+`XFrameOptionsMiddleware`; API без аутентификации от CSRF освобождён django-ninja. Статику
 админки отдаёт WhiteNoise прямо из установленных приложений
 (`WHITENOISE_USE_FINDERS`), без шага collectstatic и отдельного веб-сервера.
 

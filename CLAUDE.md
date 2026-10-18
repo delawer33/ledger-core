@@ -15,7 +15,7 @@ cp .env.example .env             # один раз; .env не коммититс
 docker compose up -d db          # Postgres на 127.0.0.1:55433 (не 5432)
 export DATABASE_URL=postgres://ledger:ledger@127.0.0.1:55433/ledger
 uv run python manage.py migrate  # применить миграции
-uv run python manage.py seed     # системные счета и dev-суперпользователь из DJANGO_SUPERUSER_*, идемпотентно
+uv run python manage.py seed     # системные счета; суперпользователь только если заданы и DJANGO_SUPERUSER_USERNAME, и _PASSWORD; идемпотентно
 uv run python manage.py start_outbox_relay   # поставить relay в очередь; выполняет `manage.py db_worker`
 uv run python manage.py runserver   # или preview "api" из .claude/launch.json
 uv run python manage.py makemigrations   # после правки моделей; применённые миграции не редактировать
@@ -35,7 +35,8 @@ docker compose up --build        # весь стек: Postgres + API на http:/
 умолчанию (`db:5432`) работает только внутри Compose. Порт 5432 хоста не использовать.
 
 Swagger: `/api/v1/docs`, health: `/api/v1/health`, админка только для чтения: `/admin/` (логин из
-`DJANGO_SUPERUSER_*` в `.env.example`, ADR-0006).
+`DJANGO_SUPERUSER_*` в твоём `.env`; в `.env.example` они пустые, ADR-0006). Compose публикует API
+только на `127.0.0.1`.
 
 ## Структура
 
@@ -74,6 +75,8 @@ docs/adr/               решения
 - Инварианты денег дублируются в БД (ADR-0004): Entry неизменяема, сумма Entry транзакции равна
   нулю. Тест, которому нужен реальный коммит (deferred-триггер), идёт с
   `@pytest.mark.django_db(transaction=True)`.
+- `.claude/settings.json` запрещает Edit только уже применённых миграций (перечислены файлами).
+  Выпустил миграцию — добавь её файл в `deny`; новые файлы миграций создавать можно.
 - Фоновые задачи через `django.tasks` с бэкендом `django-tasks-db` (ADR-0005), без брокера.
 - Сервисы — функции, принимающие зависимости явно; классы — только при реальном состоянии.
 - Конфигурация только через env (`config/settings.py`); `.env` не коммитится, `.env.example` — всегда.

@@ -1,4 +1,5 @@
 import datetime as dt
+from typing import Any
 
 import pytest
 from django.contrib.admin.sites import site
@@ -119,10 +120,10 @@ def test_transaction_page_shows_entries_and_reversal_links(
 
 
 @pytest.mark.django_db
-def test_seed_creates_superuser_from_env_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DJANGO_SUPERUSER_USERNAME", "ops")
-    monkeypatch.setenv("DJANGO_SUPERUSER_PASSWORD", "s3cret-dev")
-    monkeypatch.setenv("DJANGO_SUPERUSER_EMAIL", "ops@example.com")
+def test_seed_creates_superuser_from_settings_once(settings: Any) -> None:
+    settings.DJANGO_SUPERUSER_USERNAME = "ops"
+    settings.DJANGO_SUPERUSER_PASSWORD = "s3cret-dev"
+    settings.DJANGO_SUPERUSER_EMAIL = "ops@example.com"
 
     call_command("seed")
     call_command("seed")
@@ -135,10 +136,33 @@ def test_seed_creates_superuser_from_env_once(monkeypatch: pytest.MonkeyPatch) -
 
 
 @pytest.mark.django_db
-def test_seed_without_superuser_env_creates_no_user(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("DJANGO_SUPERUSER_USERNAME", raising=False)
-    monkeypatch.delenv("DJANGO_SUPERUSER_PASSWORD", raising=False)
+@pytest.mark.parametrize(("username", "password"), [("", ""), ("ops", ""), ("", "pw")])
+def test_seed_without_full_superuser_settings_creates_no_user(
+    settings: Any, username: str, password: str
+) -> None:
+    settings.DJANGO_SUPERUSER_USERNAME = username
+    settings.DJANGO_SUPERUSER_PASSWORD = password
 
     call_command("seed")
 
     assert not User.objects.exists()
+
+
+@pytest.mark.django_db
+def test_admin_post_without_csrf_token_is_rejected() -> None:
+    client = Client(enforce_csrf_checks=True)
+
+    response = client.post(reverse("admin:login"), {"username": "x", "password": "y"})
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_api_post_works_without_csrf_token_and_admin_is_not_framable() -> None:
+    client = Client(enforce_csrf_checks=True)
+
+    response = client.post("/api/v1/transfers", data="{}", content_type="application/json")
+
+    assert response.status_code != 403
+    admin_page = client.get(reverse("admin:login"))
+    assert admin_page.headers["X-Frame-Options"] == "DENY"

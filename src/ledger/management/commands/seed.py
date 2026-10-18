@@ -1,6 +1,6 @@
-import os
 from typing import Any
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandParser
 from django.db import transaction
@@ -31,16 +31,16 @@ class Command(BaseCommand):
 
 
 def _seed_superuser() -> str:
-    username = os.environ.get("DJANGO_SUPERUSER_USERNAME")
-    password = os.environ.get("DJANGO_SUPERUSER_PASSWORD")
+    username = settings.DJANGO_SUPERUSER_USERNAME
+    password = settings.DJANGO_SUPERUSER_PASSWORD
     if not username or not password:
         return "Superuser: skipped (DJANGO_SUPERUSER_USERNAME/PASSWORD not set)"
-    if os.environ.get("ENVIRONMENT") == "production":
+    if settings.ENVIRONMENT == "production":
         return "Superuser: skipped (ENVIRONMENT=production)"
     user_model = get_user_model()
     if user_model.objects.filter(username=username).exists():
         return f"Superuser {username}: already exists"
     user_model.objects.create_superuser(
-        username=username, email=os.environ.get("DJANGO_SUPERUSER_EMAIL", ""), password=password
+        username=username, email=settings.DJANGO_SUPERUSER_EMAIL, password=password
     )
     return f"Superuser {username}: created"

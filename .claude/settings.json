@@ -4,7 +4,9 @@
       "Read(./.env)",
       "Read(./.env.local)",
       "Read(./.env.*.local)",
-      "Edit(./src/ledger/migrations/**)"
+      "Edit(./src/ledger/migrations/0001_initial.py)",
+      "Edit(./src/ledger/migrations/0002_db_guards.py)",
+      "Edit(./src/ledger/migrations/0003_incident_one_open_per_account.py)"
     ]
   }
 }

@@ -10,7 +10,8 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "${API_PORT_EXTERNAL}:${API_PORT_INTERNAL}"
+      # Loopback only: the admin and API are not exposed on other interfaces.
+      - "127.0.0.1:${API_PORT_EXTERNAL}:${API_PORT_INTERNAL}"
     networks:
       - app_network
     healthcheck:
