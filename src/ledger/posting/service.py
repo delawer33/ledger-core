@@ -45,12 +45,8 @@ def post_transaction(
 ) -> Transaction:
     _validate_shape(lines)
     with transaction.atomic():
-        # Locking in ascending id order is what keeps opposite transfers deadlock-free.
-        ids = sorted(line.account_id for line in lines)
-        accounts = {
-            account.pk: account
-            for account in Account.objects.select_for_update().filter(pk__in=ids).order_by("pk")
-        }
+        ids = sorted({line.account_id for line in lines})
+        accounts = _lock_accounts([line.account_id for line in lines])
         missing = [account_id for account_id in ids if account_id not in accounts]
         if missing:
             raise AccountNotFoundError(f"account {missing[0]} does not exist")
@@ -71,6 +67,29 @@ def post_transaction(
             )
         OutboxEvent.objects.create(type="transaction.posted", payload=_event_payload(posted, lines))
     return posted
+
+
+def _lock_order(account_ids: Sequence[int]) -> list[int]:
+    """The order in which accounts are locked: ascending id, each once.
+
+    A single global order is what keeps opposite transfers deadlock-free. Kept as its own
+    function so the concurrency suite can break it and watch the deadlock appear.
+    """
+    return sorted(set(account_ids))
+
+
+def _lock_account(account_id: int) -> Account | None:
+    return Account.objects.select_for_update().filter(pk=account_id).first()
+
+
+def _lock_accounts(account_ids: Sequence[int]) -> dict[int, Account]:
+    """Lock accounts one row at a time, in `_lock_order`; missing accounts are left out."""
+    locked: dict[int, Account] = {}
+    for account_id in _lock_order(account_ids):
+        account = _lock_account(account_id)
+        if account is not None:
+            locked[account_id] = account
+    return locked
 
 
 def reverse_transaction(*, transaction_id: int, source_system: str, key: str) -> Transaction:

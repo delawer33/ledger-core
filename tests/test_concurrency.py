@@ -4,14 +4,16 @@ Each test states an invariant and fails if it is broken. Run alone: `pytest -m c
 Load is tunable through LEDGER_CONCURRENCY_* variables (see concurrency_support.py).
 """
 
+import contextlib
 import json
 import random
 import threading
 import time
 from collections import Counter
+from collections.abc import Sequence
 
 import pytest
-from django.db import OperationalError, transaction
+from django.db import OperationalError
 from django.test import Client
 from psycopg.errors import DeadlockDetected
 
@@ -23,6 +25,7 @@ from ledger.errors import InsufficientFundsError
 from ledger.holds.models import Hold, HoldStatus
 from ledger.holds.service import place_hold
 from ledger.invariants import assert_invariants
+from ledger.posting import service as posting_service
 from ledger.posting.models import Transaction
 from ledger.posting.service import EntryLine, post_transaction
 
@@ -95,37 +98,100 @@ def test_opposite_transfers_do_not_deadlock_and_balances_converge() -> None:
     assert_invariants()
 
 
-def _unordered_transfer(first: int, second: int, *, both_locked: threading.Barrier) -> None:
-    """A transfer that locks `first`, waits for the peer, then locks `second`.
+def _hold_after_first_lock(
+    monkeypatch: pytest.MonkeyPatch, *, wait: float
+) -> tuple[list[int], threading.Barrier]:
+    """Make the engine pause after its first row lock until the peer has its own.
 
-    Test-only stand-in for a posting engine without lock ordering: the barrier makes the
-    circular wait certain instead of probable.
+    Returns the log of locked account ids. With two writers locking in opposite orders the
+    pause makes the circular wait certain; with a common order the peer is stuck behind the
+    first lock, the barrier times out after `wait` seconds and both transfers carry on.
     """
-    with transaction.atomic():
-        Account.objects.select_for_update().get(pk=first)
-        both_locked.wait(timeout=10)
-        Account.objects.select_for_update().get(pk=second)
+    first_locked = threading.Barrier(2)
+    seen = threading.local()
+    log: list[int] = []
+    real_lock = posting_service._lock_account
+
+    def lock_account(account_id: int) -> Account | None:
+        account = real_lock(account_id)
+        log.append(account_id)
+        if not getattr(seen, "paused", False):
+            seen.paused = True
+            with contextlib.suppress(threading.BrokenBarrierError):
+                first_locked.wait(timeout=wait)
+        return account
+
+    monkeypatch.setattr(posting_service, "_lock_account", lock_account)
+    return log, first_locked
 
 
-def test_unordered_locking_deadlocks_which_is_why_the_engine_orders_locks() -> None:
-    a, b = _funded(1_000), _funded(1_000)
-    both_locked = threading.Barrier(2)
-    started = time.monotonic()
+def _run_opposite_pair(a: int, b: int, *, tag: str) -> list[bool]:
+    """Two opposite transfers on the same pair; True per thread that was a deadlock victim."""
 
     def work(index: int) -> bool:
-        first, second = (a, b) if index == 0 else (b, a)
+        source, target = (a, b) if index == 0 else (b, a)
         try:
-            _unordered_transfer(first, second, both_locked=both_locked)
+            _transfer(source, target, 7, key=f"pair-{tag}-{index}")
         except OperationalError as exc:
             return isinstance(exc.__cause__, DeadlockDetected)
         return False
 
-    deadlocked = run_threads(2, work)
+    return run_threads(2, work)
 
-    # Postgres picks one victim and lets the other finish.
-    assert sorted(deadlocked) == [False, True]
+
+def _without_lock_ordering(account_ids: Sequence[int]) -> list[int]:
+    """Mutant of `_lock_order`: lock in the caller's order, which differs between peers."""
+    return list(dict.fromkeys(account_ids))
+
+
+def test_lock_ordering_is_what_prevents_deadlock_on_opposite_transfers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same load, both outcomes: engine order survives, the mutated order deadlocks."""
+    a, b = _funded(1_000), _funded(1_000)
+    started = time.monotonic()
+
+    # Ordered (the real engine): the peer waits for the first lock, nobody deadlocks.
+    log, _ = _hold_after_first_lock(monkeypatch, wait=1.5)
+    assert _run_opposite_pair(a, b, tag="ordered") == [False, False]
+    assert log == sorted(log[:2]) + sorted(log[2:])  # each transfer locked low id first
+    assert_invariants()
+
+    # Unordered (mutant): both hold their first lock, then wait for each other.
+    monkeypatch.setattr(posting_service, "_lock_order", _without_lock_ordering)
+    _hold_after_first_lock(monkeypatch, wait=10)
+    assert sorted(_run_opposite_pair(a, b, tag="mutant")) == [
+        False,
+        True,
+    ]  # Postgres picks one victim
+
     assert time.monotonic() - started < 30
     assert_invariants()
+
+
+def test_engine_locks_accounts_one_row_at_a_time_in_ascending_id_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Observable order: the engine's row locks arrive ascending, whatever the line order."""
+    accounts = [_funded(1_000) for _ in range(4)]
+    locked: list[int] = []
+    real_lock = posting_service._lock_account
+
+    def spy(account_id: int) -> Account | None:
+        locked.append(account_id)
+        return real_lock(account_id)
+
+    monkeypatch.setattr(posting_service, "_lock_account", spy)
+    a, b, c, d = accounts
+
+    post_transaction(
+        kind="transfer",
+        lines=[EntryLine(d, -10), EntryLine(a, 5), EntryLine(c, 3), EntryLine(b, 2)],
+        source_system="load",
+        key="order-probe",
+    )
+
+    assert locked == sorted(accounts)
 
 
 def test_repeated_idempotent_request_posts_one_transaction_with_identical_replies() -> None:

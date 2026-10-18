@@ -20,7 +20,7 @@ uv run python manage.py start_outbox_relay   # поставить relay в оч�
 uv run python manage.py runserver   # или preview "api" из .claude/launch.json
 uv run python manage.py makemigrations   # после правки моделей; применённые миграции не редактировать
 uv run pytest                    # тесты идут в настоящий Postgres; один: uv run pytest tests/test_x.py -k name
-uv run pytest -m concurrency      # только многопоточные доказательства (LEDGER_CONCURRENCY_THREADS, _OPS, _ACCOUNTS, _ROUNDS, _REPEATERS)
+uv run pytest -m concurrency      # только многопоточные доказательства (LEDGER_CONCURRENCY_THREADS, _OPS, _ACCOUNTS, _ROUNDS, _REPEATERS; нижние границы проверяются, ADR-0013)
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                      # strict + django-stubs; конфиг в pyproject.toml
 uv run deptry src
