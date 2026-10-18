@@ -77,8 +77,10 @@ def capture_hold(
             raise InvalidHoldError("capture amount must be positive")
         if captured > hold.amount:
             raise CaptureExceedsHoldError(f"capture {captured} exceeds hold amount {hold.amount}")
-        # Close first: the posting engine must not count this hold against the account.
+        # Close first and save: the posting engine reads active holds from the database and must
+        # not count this one against the account. A failed posting rolls the close back (ADR-0011).
         hold.status = HoldStatus.CAPTURED
+        hold.save(update_fields=["status"])
         posted = post_transaction(
             kind=TransactionKind.HOLD_CAPTURE,
             lines=[EntryLine(hold.account_id, -captured), EntryLine(to_account_id, captured)],
@@ -86,7 +88,7 @@ def capture_hold(
             key=key,
         )
         hold.captured_transaction = posted
-        hold.save(update_fields=["status", "captured_transaction"])
+        hold.save(update_fields=["captured_transaction"])
         _emit("hold.captured", hold, captured_amount=captured, posted=posted)
     return hold
 

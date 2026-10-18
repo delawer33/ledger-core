@@ -124,6 +124,55 @@ def test_capture_to_missing_account_rolls_back_hold_closing(client: Client) -> N
     assert _balance(client, account_id)["available"] == 700
 
 
+def test_full_capture_of_hold_covering_all_available(client: Client) -> None:
+    account_id = _funded(client, 700)
+    target = _account(client)
+    hold_id = _place(client, account_id, 700).json()["id"]
+
+    response = _capture(client, hold_id, target)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "captured"
+    balance = _balance(client, account_id)
+    assert (balance["posted"], balance["available"]) == (0, 0)
+    assert _balance(client, target)["posted"] == 700
+
+
+def test_partial_capture_of_hold_covering_all_available_frees_remainder(client: Client) -> None:
+    account_id = _funded(client, 700)
+    target = _account(client)
+    hold_id = _place(client, account_id, 700).json()["id"]
+
+    assert _capture(client, hold_id, target, 1).status_code == 200
+
+    balance = _balance(client, account_id)
+    assert (balance["posted"], balance["available"]) == (699, 699)
+    assert _balance(client, target)["posted"] == 1
+
+
+def test_capture_cannot_spend_other_active_holds(client: Client) -> None:
+    account_id = _funded(client, 700)
+    target = _account(client)
+    hold_id = _place(client, account_id, 400).json()["id"]
+    _place(client, account_id, 300)
+
+    assert _capture(client, hold_id, target, 401).json()["code"] == "capture_exceeds_hold"
+    assert _capture(client, hold_id, target, 400).status_code == 200
+
+    balance = _balance(client, account_id)
+    assert (balance["posted"], balance["available"]) == (300, 0)
+
+
+def test_failed_capture_of_full_hold_keeps_hold_active(client: Client) -> None:
+    account_id = _funded(client, 700)
+    hold_id = _place(client, account_id, 700).json()["id"]
+
+    assert _capture(client, hold_id, 999_999).status_code == 404
+
+    assert Hold.objects.get(pk=hold_id).status == HoldStatus.ACTIVE
+    assert _balance(client, account_id)["available"] == 0
+
+
 def test_release_returns_amount_without_entries(client: Client) -> None:
     account_id = _funded(client)
     hold_id = _place(client, account_id, 300).json()["id"]
