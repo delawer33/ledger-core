@@ -26,11 +26,15 @@ INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.sessions",
     "django.contrib.messages",
+    "django.contrib.staticfiles",
     "django_tasks_db",
     "ledger",
 ]
 
 MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    # Serves the admin CSS/JS from the app server itself: no separate static host.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -85,6 +89,8 @@ USE_TZ = True
 TIME_ZONE = "UTC"
 LANGUAGE_CODE = "en-us"
 STATIC_URL = "static/"
+# Admin assets are served straight from the installed apps: no collectstatic step.
+WHITENOISE_USE_FINDERS = True
 
 LOGGING = {
     "version": 1,

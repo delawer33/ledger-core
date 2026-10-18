@@ -15,7 +15,7 @@ cp .env.example .env             # один раз; .env не коммититс
 docker compose up -d db          # Postgres на 127.0.0.1:55433 (не 5432)
 export DATABASE_URL=postgres://ledger:ledger@127.0.0.1:55433/ledger
 uv run python manage.py migrate  # применить миграции
-uv run python manage.py seed     # системные счета, идемпотентно
+uv run python manage.py seed     # системные счета и dev-суперпользователь из DJANGO_SUPERUSER_*, идемпотентно
 uv run python manage.py runserver   # или preview "api" из .claude/launch.json
 uv run python manage.py makemigrations   # после правки моделей; применённые миграции не редактировать
 uv run pytest                    # тесты идут в настоящий Postgres; один: uv run pytest tests/test_x.py -k name
@@ -32,7 +32,8 @@ docker compose up --build        # весь стек: Postgres + API на http:/
 Тесты требуют `DATABASE_URL`; pytest-django создаёт отдельную БД `test_<имя>`. Дев-значение по
 умолчанию (`db:5432`) работает только внутри Compose. Порт 5432 хоста не использовать.
 
-Swagger: `/api/v1/docs`, health: `/api/v1/health`.
+Swagger: `/api/v1/docs`, health: `/api/v1/health`, админка только для чтения: `/admin/` (логин из
+`DJANGO_SUPERUSER_*` в `.env.example`, ADR-0006).
 
 ## Структура
 
@@ -40,7 +41,7 @@ Swagger: `/api/v1/docs`, health: `/api/v1/health`.
 manage.py
 src/config/             Django-проект: settings.py (всё из env), urls.py, wsgi.py
 src/ledger/             единственное приложение; модули по доменным областям, не по слоям
-  accounts/             Account, системные счета (system.py)
+  accounts/             Account, системные счета (system.py), admin.py с Posted/Available
   balances/             BalanceSnapshot
   posting/              Transaction, Entry
   idempotency/          IdempotencyRecord
@@ -51,6 +52,8 @@ src/ledger/             единственное приложение; моду�
   errors.py             LedgerError и подклассы: машинный код правила + HTTP-статус (ADR-0006)
   api_headers.py        обязательные заголовки мутаций Idempotency-Key и X-Source-System
   posting/service.py    posting engine: post_transaction, единственная точка движения денег
+  admin.py              реэкспорт admin-модулей областей; readonly_admin.py: общая read-only база
+  api.py                NinjaAPI, монтируется под /api/v1
   models.py             только реэкспорт моделей областей (Django ищет модели здесь)
   migrations/           0001 схема, 0002 триггеры Postgres на Entry
   management/commands/  seed, дальше команды областей
@@ -63,6 +66,7 @@ docs/adr/               решения
 
 ## Конвенции
 
+- Админка только для чтения (ADR-0006): новая модель регистрируется через `ReadOnlyModelAdmin`.
 - Amount везде `BigIntegerField` в минорных единицах (ADR-0001); float и Decimal не использовать.
 - Инварианты денег дублируются в БД (ADR-0004): Entry неизменяема, сумма Entry транзакции равна
   нулю. Тест, которому нужен реальный коммит (deferred-триггер), идёт с
