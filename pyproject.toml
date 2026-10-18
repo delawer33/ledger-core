@@ -74,3 +74,6 @@ DJANGO_SETTINGS_MODULE = "config.settings"
 # A deprecation surfaces the day a dependency bump introduces it. Silence third-party noise with a
 # targeted "ignore:<message>:<Category>" line, never by dropping this.
 filterwarnings = ["error"]
+markers = [
+    "concurrency: multi-threaded proofs of the ledger guarantees on real Postgres (pytest -m concurrency)",
+]

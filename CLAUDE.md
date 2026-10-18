@@ -20,6 +20,7 @@ uv run python manage.py start_outbox_relay   # поставить relay в оч�
 uv run python manage.py runserver   # или preview "api" из .claude/launch.json
 uv run python manage.py makemigrations   # после правки моделей; применённые миграции не редактировать
 uv run pytest                    # тесты идут в настоящий Postgres; один: uv run pytest tests/test_x.py -k name
+uv run pytest -m concurrency      # только многопоточные доказательства (LEDGER_CONCURRENCY_THREADS, _OPS, _ACCOUNTS, _ROUNDS, _REPEATERS)
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                      # strict + django-stubs; конфиг в pyproject.toml
 uv run deptry src
@@ -49,6 +50,7 @@ src/ledger/             единственное приложение; моду�
   holds/                Hold; service.py (place, capture, release, expire), tasks.py (expire_holds)
   outbox/               OutboxEvent, DeliveredEvent; contract.py, relay.py, consumer.py, tasks.py (контракт: docs/outbox.md)
   reconciliation/       Incident, service.py (reconcile, close_incident), tasks.py (reconcile_task)
+  invariants.py         check_invariants / assert_invariants: сумма Posted = 0, Available >= 0, снапшот = пересчёт (ADR-0013)
   api.py                NinjaAPI под /api/v1: монтирует роутеры областей, маппит LedgerError в ответ
   errors.py             LedgerError и подклассы: машинный код правила + HTTP-статус (ADR-0006)
   api_headers.py        обязательные заголовки мутаций Idempotency-Key и X-Source-System
@@ -58,7 +60,7 @@ src/ledger/             единственное приложение; моду�
   models.py             только реэкспорт моделей областей (Django ищет модели здесь)
   migrations/           0001 схема, 0002 триггеры Postgres на Entry
   management/commands/  seed, reconcile [--enqueue], close_incident <id> --note, дальше команды областей
-tests/                  pytest + pytest-django против настоящего Postgres
+tests/                  pytest + pytest-django против настоящего Postgres; test_concurrency.py (маркер concurrency, ADR-0013)
 docs/adr/               решения
 ```
 

@@ -54,7 +54,9 @@ jobs:
       - name: mypy --strict
         run: uv run mypy
       - name: pytest
-        run: uv run pytest
+        run: uv run pytest -m "not concurrency"
+      - name: pytest (concurrency proofs)
+        run: uv run pytest -m concurrency
 
   image:
     runs-on: ubuntu-latest
