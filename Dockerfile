@@ -32,8 +32,10 @@ WORKDIR /app
 COPY --from=builder --chown=app:app /app /app
 USER app
 
-ENV API_PORT_INTERNAL=8000
+ENV API_PORT_INTERNAL=8000 \
+    GUNICORN_WORKERS=1 \
+    GUNICORN_THREADS=1
 
 # The service command lives here and only here (compose does not repeat it). Migrations and the
 # System Account seed are idempotent, so running them on every start is safe.
-CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py seed && exec gunicorn config.wsgi:application --pythonpath src --bind 0.0.0.0:${API_PORT_INTERNAL}"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py seed && exec gunicorn config.wsgi:application --pythonpath src --workers ${GUNICORN_WORKERS} --threads ${GUNICORN_THREADS} --bind 0.0.0.0:${API_PORT_INTERNAL}"]

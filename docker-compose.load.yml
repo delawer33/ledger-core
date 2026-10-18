@@ -1,0 +1,23 @@
+# Load-run override: fixed CPU and memory limits and a multi-worker api, so numbers from different
+# machines are comparable. Use on top of the base file (ADR-0019):
+#   docker compose -p ledger-load -f docker-compose.yml -f docker-compose.load.yml up -d --build
+# Limits are tunable through env; the defaults are the ones recorded next to the results.
+services:
+  api:
+    cpus: ${LOAD_API_CPUS:-2}
+    mem_limit: ${LOAD_API_MEM:-1g}
+    environment:
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-4}
+      GUNICORN_THREADS: ${GUNICORN_THREADS:-1}
+
+  worker:
+    cpus: ${LOAD_WORKER_CPUS:-0.5}
+    mem_limit: ${LOAD_WORKER_MEM:-512m}
+
+  scheduler:
+    cpus: ${LOAD_WORKER_CPUS:-0.5}
+    mem_limit: ${LOAD_WORKER_MEM:-512m}
+
+  db:
+    cpus: ${LOAD_DB_CPUS:-2}
+    mem_limit: ${LOAD_DB_MEM:-2g}

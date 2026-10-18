@@ -26,6 +26,8 @@ uv run ruff check . && uv run ruff format --check .
 uv run mypy                      # strict + django-stubs; конфиг в pyproject.toml
 uv run deptry src
 uv run pre-commit install        # один раз на клон
+uv run python manage.py loadgen run --scenario random|hot|mixed --base-url http://127.0.0.1:8000/api/v1 --workers 8 --duration 30 --accounts 20 --seed 1 --output docs/load/<имя>.json  # нагрузка (ниже)
+uv run python manage.py loadgen table docs/load/*.json   # markdown-таблица для README; FAILED-отчёты отвергает
 docker compose up --build        # весь стек: Postgres + API на http://localhost:8000 + воркер + планировщик (истечение холдов, сверка, relay без ручных команд)
 ```
 
@@ -38,6 +40,19 @@ docker compose up --build        # весь стек: Postgres + API на http:/
 Swagger: `/api/v1/docs`, health: `/api/v1/health`, админка только для чтения: `/admin/` (логин из
 `DJANGO_SUPERUSER_*` в твоём `.env`; в `.env.example` они пустые, ADR-0006). Compose публикует API
 только на `127.0.0.1`.
+
+## Нагрузочный прогон (ADR-0019)
+
+1. Поднять стек с лимитами: `docker compose -p ledger-load -f docker-compose.yml -f docker-compose.load.yml up -d --build`
+   (`GUNICORN_WORKERS`, `GUNICORN_THREADS`, `LOAD_API_CPUS`, `LOAD_API_MEM`, `LOAD_DB_CPUS`, `LOAD_DB_MEM`,
+   `LOAD_WORKER_CPUS`, `LOAD_WORKER_MEM` через env или `.env`; порты хоста в `.env`, не 5432).
+2. С хоста, с `DATABASE_URL` на БД стека (нужна для инвариантов и счётчика дедлоков), запустить `loadgen run`
+   на каждый сценарий; `--container-limits "api 2cpu/1g, db 2cpu/2g"` попадает в отчёт рядом с железом и git sha.
+3. Остановить стек: `docker compose -p ledger-load stop` (никогда `down -v`).
+
+Генератор сам заводит и пополняет счета (из `system:clearing`), воркеры ходят по HTTP. Отчёт без прошедших
+инвариантов помечен FAILED, команда выходит с ошибкой. Формат и сырые прогоны: `docs/load/README.md`.
+Код: `src/ledger/loadgen/` (`scenarios.py`, `runner.py`, `report.py`), смоук-тесты `tests/test_loadgen.py`.
 
 ## Структура
 
@@ -54,6 +69,7 @@ src/ledger/             единственное приложение; моду�
   outbox/               OutboxEvent, DeliveredEvent; contract.py, service.py (emit: единственная запись событий), relay.py, consumer.py, tasks.py (контракт: docs/outbox.md)
   reconciliation/       Incident, IncidentRepair (append-only аудит починок, триггер БД), service.py (reconcile, repair_snapshot, close_incident; close отказывает при расхождении снапшота, ADR-0017), tasks.py (reconcile_task, цепочка reconciliation); при открытом Incident движок и холды берут Posted из Entry (ADR-0015)
   scheduler.py          SCHEDULED: реестр периодических цепочек, ensure_scheduled (ADR-0016); команда run_scheduler
+  loadgen/              нагрузочный генератор: client (http.client), scenarios (random, hot, mixed), runner, report; команда loadgen (ADR-0019)
   invariants.py         check_invariants / assert_invariants: сумма Posted = 0, Available >= 0, снапшот = пересчёт (ADR-0013)
   api.py                NinjaAPI под /api/v1: монтирует роутеры областей, маппит LedgerError в ответ
   limits.py             лимиты входа: MAX_AMOUNT, MAX_TTL_SECONDS, MAX_HEADER_LENGTH (ADR-0014); только вход, выходные схемы без этих ограничений
