@@ -47,7 +47,10 @@ src/ledger/             единственное приложение; моду�
   holds/                Hold
   outbox/               OutboxEvent, DeliveredEvent
   reconciliation/       Incident
-  api.py                NinjaAPI, монтируется под /api/v1
+  api.py                NinjaAPI под /api/v1: монтирует роутеры областей, маппит LedgerError в ответ
+  errors.py             LedgerError и подклассы: машинный код правила + HTTP-статус (ADR-0006)
+  api_headers.py        обязательные заголовки мутаций Idempotency-Key и X-Source-System
+  posting/service.py    posting engine: post_transaction, единственная точка движения денег
   models.py             только реэкспорт моделей областей (Django ищет модели здесь)
   migrations/           0001 схема, 0002 триггеры Postgres на Entry
   management/commands/  seed, дальше команды областей

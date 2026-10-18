@@ -267,6 +267,7 @@ dependencies = [
     { name = "django-tasks-db" },
     { name = "gunicorn" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "pydantic" },
 ]
 
 [package.dev-dependencies]
@@ -287,6 +288,7 @@ requires-dist = [
     { name = "django-tasks-db", specifier = ">=0.13.0" },
     { name = "gunicorn", specifier = ">=23.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
+    { name = "pydantic", specifier = ">=2.10" },
 ]
 
 [package.metadata.requires-dev]

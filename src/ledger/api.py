@@ -1,10 +1,28 @@
 """HTTP API: django-ninja under /api/v1."""
 
 from django.db import DatabaseError, connection
-from django.http import HttpRequest
+from django.http import HttpRequest, HttpResponse
 from ninja import NinjaAPI, Schema, Status
 
+from ledger.accounts.router import router as accounts_router
+from ledger.errors import LedgerError
+from ledger.posting.router import router as transactions_router
+
 api = NinjaAPI(title="Ledger Core", version="1", urls_namespace="ledger")
+api.add_router("/accounts", accounts_router)
+api.add_router("/transactions", transactions_router)
+
+
+class ErrorOut(Schema):
+    code: str
+    detail: str
+
+
+@api.exception_handler(LedgerError)
+def ledger_error(request: HttpRequest, exc: LedgerError) -> HttpResponse:
+    return api.create_response(
+        request, ErrorOut(code=exc.code, detail=exc.detail), status=int(exc.status)
+    )
 
 
 class HealthOut(Schema):
