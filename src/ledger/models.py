@@ -2,6 +2,7 @@
 
 from ledger.accounts.models import Account
 from ledger.balances.models import BalanceSnapshot
+from ledger.chains.models import TaskChain
 from ledger.holds.models import Hold
 from ledger.idempotency.models import IdempotencyRecord
 from ledger.outbox.models import DeliveredEvent, OutboxEvent
@@ -17,5 +18,6 @@ __all__ = [
     "IdempotencyRecord",
     "Incident",
     "OutboxEvent",
+    "TaskChain",
     "Transaction",
 ]

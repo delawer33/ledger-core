@@ -96,6 +96,9 @@ TASKS = {"default": {"BACKEND": "django_tasks_db.DatabaseBackend", "QUEUES": ["d
 # Pause between outbox relay passes; the relay task reschedules itself with this delay.
 OUTBOX_RELAY_INTERVAL_SECONDS = int(os.environ.get("OUTBOX_RELAY_INTERVAL_SECONDS", "5"))
 
+# A chain is presumed dead this long after its next pass was due; a pass must finish within it.
+TASK_CHAIN_GRACE_SECONDS = int(os.environ.get("TASK_CHAIN_GRACE_SECONDS", "60"))
+
 USE_TZ = True
 TIME_ZONE = "UTC"
 LANGUAGE_CODE = "en-us"

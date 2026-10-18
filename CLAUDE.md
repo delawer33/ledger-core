@@ -16,7 +16,7 @@ docker compose up -d db          # Postgres на 127.0.0.1:55433 (не 5432)
 export DATABASE_URL=postgres://ledger:ledger@127.0.0.1:55433/ledger
 uv run python manage.py migrate  # применить миграции
 uv run python manage.py seed     # системные счета; суперпользователь только если заданы и DJANGO_SUPERUSER_USERNAME, и _PASSWORD; идемпотентно
-uv run python manage.py start_outbox_relay   # поставить relay в очередь; выполняет `manage.py db_worker`
+uv run python manage.py start_outbox_relay   # запустить цепочку relay, если живой нет (идемпотентно, годится для cron); выполняет `manage.py db_worker`
 uv run python manage.py runserver   # или preview "api" из .claude/launch.json
 uv run python manage.py makemigrations   # после правки моделей; применённые миграции не редактировать
 uv run pytest                    # тесты идут в настоящий Postgres; один: uv run pytest tests/test_x.py -k name
@@ -49,7 +49,8 @@ src/ledger/             единственное приложение; моду�
   posting/              Transaction, Entry
   idempotency/          IdempotencyRecord, service.py: run_idempotent (ADR-0009), все мутирующие эндпоинты (включая POST /accounts) идут через него
   holds/                Hold; service.py (place, capture, release, expire), tasks.py (expire_holds)
-  outbox/               OutboxEvent, DeliveredEvent; contract.py, relay.py, consumer.py, tasks.py (контракт: docs/outbox.md)
+  chains/               TaskChain, service.py: ensure_chain / schedule_next, одна живая цепочка самопланирующейся задачи (ADR-0012)
+  outbox/               OutboxEvent, DeliveredEvent; contract.py, service.py (emit: единственная запись событий), relay.py, consumer.py, tasks.py (контракт: docs/outbox.md)
   reconciliation/       Incident, service.py (reconcile, close_incident), tasks.py (reconcile_task)
   invariants.py         check_invariants / assert_invariants: сумма Posted = 0, Available >= 0, снапшот = пересчёт (ADR-0013)
   api.py                NinjaAPI под /api/v1: монтирует роутеры областей, маппит LedgerError в ответ

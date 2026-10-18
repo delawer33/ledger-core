@@ -21,7 +21,7 @@ from ledger.errors import (
     TransactionNotFoundError,
 )
 from ledger.limits import BALANCE_MAX, BALANCE_MIN, MAX_AMOUNT
-from ledger.outbox.models import OutboxEvent
+from ledger.outbox.service import emit
 from ledger.posting.models import Entry, Transaction, TransactionKind
 
 # Liability and asset accounts may not go below zero Available Balance; the rest may.
@@ -65,7 +65,7 @@ def post_transaction(
             BalanceSnapshot.objects.filter(account_id=line.account_id).update(
                 posted_amount=F("posted_amount") + line.amount, version=F("version") + 1
             )
-        OutboxEvent.objects.create(type="transaction.posted", payload=_event_payload(posted, lines))
+        emit("transaction.posted", _event_payload(posted, lines))
     return posted
 
 

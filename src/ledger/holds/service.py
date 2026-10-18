@@ -18,7 +18,7 @@ from ledger.errors import (
 )
 from ledger.holds.models import Hold, HoldStatus
 from ledger.limits import MAX_AMOUNT, MAX_TTL_SECONDS
-from ledger.outbox.models import OutboxEvent
+from ledger.outbox.service import emit
 from ledger.posting.models import Transaction, TransactionKind
 from ledger.posting.service import EntryLine, post_transaction
 
@@ -153,4 +153,4 @@ def _emit(
         payload["transaction_id"] = posted.pk
     if reason is not None:
         payload["reason"] = reason
-    OutboxEvent.objects.create(type=event_type, payload=payload)
+    emit(event_type, payload)

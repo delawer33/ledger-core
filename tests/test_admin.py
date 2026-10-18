@@ -43,7 +43,7 @@ def transfer(seller: Account, bank: Account) -> Transaction:
 @pytest.mark.django_db
 def test_every_core_model_is_registered_and_read_only(admin_client: Client) -> None:
     models = [m for m in site._registry if m._meta.app_label == "ledger"]
-    assert len(models) == 9
+    assert len(models) == 10
     for model in models:
         label = f"admin:ledger_{model._meta.model_name}_"
         assert admin_client.get(reverse(label + "changelist")).status_code == 200
