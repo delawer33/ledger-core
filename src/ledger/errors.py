@@ -82,6 +82,16 @@ class IncidentNoteRequiredError(LedgerError):
     code = "incident_note_required"
 
 
+class RepairActorRequiredError(LedgerError):
+    code = "repair_actor_required"
+
+
+class RepairNotNeededError(LedgerError):
+    """The snapshot already equals the recount; a repair would only write a false audit row."""
+
+    code = "repair_not_needed"
+
+
 class SnapshotStillDivergesError(LedgerError):
     """The snapshot differs from the recount; only an explicit repair_snapshot fixes that."""
 

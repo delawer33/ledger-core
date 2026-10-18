@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.db import connection
+from django.db import IntegrityError, connection, transaction
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
@@ -16,9 +16,11 @@ from ledger.balances.models import BalanceSnapshot
 from ledger.errors import (
     IncidentNoteRequiredError,
     IncidentNotFoundError,
+    RepairActorRequiredError,
+    RepairNotNeededError,
 )
 from ledger.holds.models import Hold
-from ledger.reconciliation.models import Incident
+from ledger.reconciliation.models import Incident, IncidentRepair
 from ledger.reconciliation.service import close_incident, reconcile, repair_snapshot
 
 pytestmark = pytest.mark.django_db
@@ -124,7 +126,7 @@ def test_close_requires_note_and_restores_trust(client: Client) -> None:
         call_command("close_incident", str(incident.pk))
     assert Incident.objects.get().closed_at is None
 
-    call_command("repair_snapshot", str(incident.pk), note="recounted from entries")
+    call_command("repair_snapshot", str(incident.pk), note="recounted from entries", actor="alice")
     call_command("close_incident", str(incident.pk), note="bug found, snapshot repaired")
 
     incident.refresh_from_db()
@@ -306,16 +308,17 @@ def test_repair_then_close_restores_trust_and_records_before_and_after(client: C
     account, other = _untrusted_overstated(client)
     incident = Incident.objects.get()
 
-    call_command("repair_snapshot", str(incident.pk), note="inflated by bug 42")
+    call_command("repair_snapshot", str(incident.pk), note="inflated by bug 42", actor="alice")
     snapshot = BalanceSnapshot.objects.get(account_id=account)
     assert snapshot.posted_amount == 1000
     assert not snapshot.trusted  # repair alone does not return trust
     call_command("close_incident", str(incident.pk), note="verified")
 
     incident.refresh_from_db()
-    assert (incident.repaired_from, incident.repaired_to) == (1777, 1000)
-    assert incident.repair_note == "inflated by bug 42"
-    assert incident.repaired_at is not None
+    repair = IncidentRepair.objects.get(incident=incident)
+    assert (repair.repaired_from, repair.repaired_to) == (1777, 1000)
+    assert (repair.note, repair.actor) == ("inflated by bug 42", "alice")
+    assert repair.repaired_at is not None
     assert incident.closed_at is not None
     assert BalanceSnapshot.objects.get(account_id=account).trusted
     assert _transfer(client, account, other, 1500).status_code == 422
@@ -328,16 +331,64 @@ def test_repair_requires_a_note_and_an_open_incident(client: Client) -> None:
     incident = Incident.objects.get()
 
     with pytest.raises(CommandError, match="incident_note_required"):
-        call_command("repair_snapshot", str(incident.pk), note="  ")
+        call_command("repair_snapshot", str(incident.pk), note="  ", actor="alice")
     with pytest.raises(CommandError):
-        call_command("repair_snapshot", str(incident.pk))
+        call_command("repair_snapshot", str(incident.pk), actor="alice")
+    with pytest.raises(CommandError):
+        call_command("repair_snapshot", str(incident.pk), note="fix")  # no --actor
+    with pytest.raises(RepairActorRequiredError):
+        repair_snapshot(incident.pk, note="fix", actor="  ")
     assert BalanceSnapshot.objects.get(account_id=account).posted_amount == 1777
 
-    repair_snapshot(incident.pk, note="fix")
+    repair_snapshot(incident.pk, note="fix", actor="alice")
     close_incident(incident.pk, note="done")
     with pytest.raises(CommandError, match="incident_not_found"):
-        call_command("repair_snapshot", str(incident.pk), note="again")
+        call_command("repair_snapshot", str(incident.pk), note="again", actor="alice")
     with pytest.raises(IncidentNotFoundError):
-        repair_snapshot(incident.pk, note="again")
+        repair_snapshot(incident.pk, note="again", actor="alice")
     with pytest.raises(IncidentNoteRequiredError):
-        repair_snapshot(incident.pk, note="")
+        repair_snapshot(incident.pk, note="", actor="alice")
+
+
+def test_two_repairs_give_two_audit_rows_and_the_first_is_untouched(client: Client) -> None:
+    account, _ = _untrusted_overstated(client)
+    incident = Incident.objects.get()
+    repair_snapshot(incident.pk, note="first", actor="alice")
+    first = IncidentRepair.objects.values().get()
+
+    BalanceSnapshot.objects.filter(account_id=account).update(posted_amount=5)  # drifts again
+    repair_snapshot(incident.pk, note="second", actor="bob")
+
+    rows = list(IncidentRepair.objects.order_by("id"))
+    assert [(r.repaired_from, r.repaired_to, r.note, r.actor) for r in rows] == [
+        (1777, 1000, "first", "alice"),
+        (5, 1000, "second", "bob"),
+    ]
+    assert IncidentRepair.objects.filter(pk=rows[0].pk).values().get() == first
+
+
+def test_repair_of_an_equal_snapshot_is_refused_and_writes_no_audit(client: Client) -> None:
+    _untrusted_overstated(client)
+    incident = Incident.objects.get()
+    repair_snapshot(incident.pk, note="first", actor="alice")
+
+    with pytest.raises(RepairNotNeededError):
+        repair_snapshot(incident.pk, note="again", actor="alice")
+    with pytest.raises(CommandError, match="repair_not_needed"):
+        call_command("repair_snapshot", str(incident.pk), note="again", actor="alice")
+
+    assert IncidentRepair.objects.count() == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_repair_audit_is_immutable_in_the_database(client: Client) -> None:
+    _untrusted_overstated(client)
+    incident = Incident.objects.get()
+    repair = repair_snapshot(incident.pk, note="first", actor="alice")
+
+    with pytest.raises(IntegrityError, match="append-only"), transaction.atomic():
+        IncidentRepair.objects.filter(pk=repair.pk).update(note="rewritten")
+    with pytest.raises(IntegrityError, match="append-only"), transaction.atomic():
+        IncidentRepair.objects.filter(pk=repair.pk).delete()
+
+    assert IncidentRepair.objects.get().note == "first"

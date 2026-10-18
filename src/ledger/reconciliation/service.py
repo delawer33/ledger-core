@@ -17,12 +17,14 @@ from ledger.balances.service import recount_posted
 from ledger.errors import (
     IncidentNoteRequiredError,
     IncidentNotFoundError,
+    RepairActorRequiredError,
+    RepairNotNeededError,
     SnapshotStillDivergesError,
 )
 from ledger.holds.models import Hold, HoldStatus
 from ledger.posting.models import Entry
 from ledger.posting.service import NON_NEGATIVE_TYPES
-from ledger.reconciliation.models import Incident
+from ledger.reconciliation.models import Incident, IncidentRepair
 
 logger = logging.getLogger(__name__)
 
@@ -155,23 +157,33 @@ def close_incident(incident_id: int, *, note: str) -> Incident:
     return incident
 
 
-def repair_snapshot(incident_id: int, *, note: str) -> Incident:
+def repair_snapshot(incident_id: int, *, note: str, actor: str) -> IncidentRepair:
     """Set the snapshot of an open Incident's account to the recount of Entries, by hand.
 
     The only place a snapshot is rewritten, and only on an explicit operator command with a
-    reason (ADR-0003). The snapshot stays untrusted; `close_incident` returns trust.
+    reason and a name (ADR-0003). Every repair appends an IncidentRepair row; earlier rows are
+    never touched (ADR-0017). A snapshot already equal to the recount is refused. The snapshot
+    stays untrusted; `close_incident` returns trust.
     """
     if not note.strip():
         raise IncidentNoteRequiredError("repairing a snapshot requires a note")
+    if not actor.strip():
+        raise RepairActorRequiredError("repairing a snapshot requires an actor")
     with transaction.atomic():
         incident = _lock_open_incident(incident_id)
         Account.objects.select_for_update().get(pk=incident.account_id)
         snapshot = BalanceSnapshot.objects.get(account_id=incident.account_id)
         recounted = recount_posted(incident.account_id)
-        incident.repaired_from = snapshot.posted_amount
-        incident.repaired_to = recounted
-        incident.repaired_at = timezone.now()
-        incident.repair_note = note.strip()
-        incident.save(update_fields=["repaired_from", "repaired_to", "repaired_at", "repair_note"])
+        if snapshot.posted_amount == recounted:
+            raise RepairNotNeededError(
+                f"snapshot already equals the recount {recounted}; nothing to repair"
+            )
+        repair = IncidentRepair.objects.create(
+            incident=incident,
+            repaired_from=snapshot.posted_amount,
+            repaired_to=recounted,
+            note=note.strip(),
+            actor=actor.strip(),
+        )
         BalanceSnapshot.objects.filter(pk=snapshot.pk).update(posted_amount=recounted)
-    return incident
+    return repair

@@ -7,7 +7,7 @@ from ledger.holds.models import Hold
 from ledger.idempotency.models import IdempotencyRecord
 from ledger.outbox.models import DeliveredEvent, OutboxEvent
 from ledger.posting.models import Entry, Transaction
-from ledger.reconciliation.models import Incident
+from ledger.reconciliation.models import Incident, IncidentRepair
 
 __all__ = [
     "Account",
@@ -17,6 +17,7 @@ __all__ = [
     "Hold",
     "IdempotencyRecord",
     "Incident",
+    "IncidentRepair",
     "OutboxEvent",
     "TaskChain",
     "Transaction",

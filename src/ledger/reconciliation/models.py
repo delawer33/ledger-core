@@ -12,11 +12,6 @@ class Incident(models.Model):
     opened_at = models.DateTimeField(auto_now_add=True)
     closed_at = models.DateTimeField(null=True, blank=True)
     note = models.TextField(blank=True, default="")
-    # Filled by repair_snapshot: what the snapshot was, what it became, when and why (ADR-0017).
-    repaired_from = models.BigIntegerField(null=True, blank=True)
-    repaired_to = models.BigIntegerField(null=True, blank=True)
-    repaired_at = models.DateTimeField(null=True, blank=True)
-    repair_note = models.TextField(blank=True, default="")
 
     class Meta:
         constraints = [
@@ -27,3 +22,20 @@ class Incident(models.Model):
                 name="incident_one_open_per_account",
             ),
         ]
+
+
+class IncidentRepair(models.Model):
+    """One manual snapshot repair: was, became, who, why, when. Append-only (ADR-0017).
+
+    Immutable like Entry: a database trigger rejects UPDATE and DELETE.
+    """
+
+    incident = models.ForeignKey(Incident, on_delete=models.PROTECT, related_name="repairs")
+    repaired_from = models.BigIntegerField()
+    repaired_to = models.BigIntegerField()
+    note = models.TextField()
+    actor = models.CharField(max_length=255)
+    repaired_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["id"]

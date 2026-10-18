@@ -15,14 +15,17 @@ class Command(BaseCommand):
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument("incident_id", type=int)
         parser.add_argument("--note", required=True, help="why the snapshot is being rewritten")
+        parser.add_argument("--actor", required=True, help="who runs the repair (name or login)")
 
     def handle(self, *_args: Any, **options: Any) -> None:
         try:
-            incident = repair_snapshot(options["incident_id"], note=options["note"])
+            repair = repair_snapshot(
+                options["incident_id"], note=options["note"], actor=options["actor"]
+            )
         except LedgerError as error:
             raise CommandError(f"{error.code}: {error.detail}") from error
         self.stdout.write(
-            f"Incident {incident.pk}: snapshot of account {incident.account_id} "
-            f"{incident.repaired_from} -> {incident.repaired_to}; still untrusted, "
+            f"Incident {repair.incident_id}: snapshot of account {repair.incident.account_id} "
+            f"{repair.repaired_from} -> {repair.repaired_to} by {repair.actor}; still untrusted, "
             "run close_incident"
         )

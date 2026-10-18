@@ -291,7 +291,7 @@ def test_snapshot_repair_under_concurrent_postings_equals_the_recount() -> None:
 
     def work(index: int) -> None:
         if index == 0:
-            repair_snapshot(incident_id, note="concurrent repair")
+            repair_snapshot(incident_id, note="concurrent repair", actor="test")
             return
         for op in range(OPS_PER_THREAD):
             _transfer(account, sink, 1, key=f"r{index}-{op}")

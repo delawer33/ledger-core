@@ -12,7 +12,7 @@ from django.utils import timezone
 from ledger.accounts.admin import AccountAdmin
 from ledger.accounts.models import Account
 from ledger.holds.models import Hold
-from ledger.models import Entry, Incident, Transaction
+from ledger.models import Entry, Incident, IncidentRepair, Transaction
 
 
 @pytest.fixture
@@ -166,3 +166,23 @@ def test_api_post_works_without_csrf_token_and_admin_is_not_framable() -> None:
     assert response.status_code != 403
     admin_page = client.get(reverse("admin:login"))
     assert admin_page.headers["X-Frame-Options"] == "DENY"
+
+
+@pytest.mark.django_db
+def test_incident_page_shows_repair_history_read_only(
+    admin_client: Client, seller: Account
+) -> None:
+    incident = Incident.objects.create(account=seller, expected=700, actual=1)
+    IncidentRepair.objects.create(
+        incident=incident, repaired_from=1, repaired_to=700, note="first fix", actor="alice"
+    )
+    url = reverse("admin:ledger_incident_change", args=[incident.pk])
+
+    page = admin_client.get(url)
+
+    assert page.status_code == 200
+    body = page.content.decode()
+    assert "first fix" in body
+    assert "alice" in body
+    assert admin_client.post(url, {}).status_code == 403
+    assert not page.context["inline_admin_formsets"][0].formset.can_delete
