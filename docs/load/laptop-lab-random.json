@@ -1,0 +1,40 @@
+{
+  "deadlocks": 0,
+  "features": {
+    "fee_payout_paths": []
+  },
+  "hardware": {
+    "container_limits": "api 0.3cpu/384m, db 0.25cpu/448m, worker 0.1cpu/128m, scheduler 0.05cpu/96m, loadgen 0.1cpu/192m, gunicorn 2x4",
+    "cpu_cores": 16,
+    "cpu_model": "12th Gen Intel(R) Core(TM) i5-12500H",
+    "os": "Linux-6.17.0-41-generic-x86_64-with-glibc2.36",
+    "ram_gib": 14.8
+  },
+  "invariants": {
+    "accounts_checked": 172,
+    "ok": true,
+    "posted_total": 0,
+    "violations": []
+  },
+  "params": {
+    "accounts": 20,
+    "base_url": "http://api:8000/api/v1",
+    "duration_s": 60.0,
+    "seed": 1,
+    "workers": 8
+  },
+  "results": {
+    "elapsed_s": 60.294,
+    "errors_by_code": {},
+    "errors_by_http": {},
+    "ok": 553,
+    "ops_per_s": 9.17,
+    "p50_ms": 802.33,
+    "p99_ms": 2003.44,
+    "replay_mismatches": 0,
+    "requests": 553
+  },
+  "scenario": "random",
+  "status": "OK",
+  "version": "3cfbcfa"
+}
