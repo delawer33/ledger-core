@@ -14,7 +14,11 @@ from django.utils import timezone
 from ledger.accounts.models import Account
 from ledger.balances.models import BalanceSnapshot
 from ledger.balances.service import recount_posted
-from ledger.errors import IncidentNoteRequiredError, IncidentNotFoundError
+from ledger.errors import (
+    IncidentNoteRequiredError,
+    IncidentNotFoundError,
+    SnapshotStillDivergesError,
+)
 from ledger.holds.models import Hold, HoldStatus
 from ledger.posting.models import Entry
 from ledger.posting.service import NON_NEGATIVE_TYPES
@@ -118,17 +122,56 @@ def _log(result: ReconciliationResult) -> None:
     )
 
 
+def _lock_open_incident(incident_id: int) -> Incident:
+    try:
+        return Incident.objects.select_for_update().get(pk=incident_id, closed_at=None)
+    except Incident.DoesNotExist:
+        raise IncidentNotFoundError(f"no open incident {incident_id}") from None
+
+
 def close_incident(incident_id: int, *, note: str) -> Incident:
-    """Close by hand after investigation; the snapshot becomes trusted again."""
+    """Close by hand after investigation; the snapshot becomes trusted again.
+
+    Refuses while the snapshot differs from the recount: trust is only returned to a snapshot
+    that is right, so a forgotten repair cannot reopen the hole of ADR-0015.
+    """
     if not note.strip():
         raise IncidentNoteRequiredError("closing an incident requires a note")
     with transaction.atomic():
-        try:
-            incident = Incident.objects.select_for_update().get(pk=incident_id, closed_at=None)
-        except Incident.DoesNotExist:
-            raise IncidentNotFoundError(f"no open incident {incident_id}") from None
+        incident = _lock_open_incident(incident_id)
+        # Same account lock as the posting engine: snapshot and Entries are read at one moment.
+        Account.objects.select_for_update().get(pk=incident.account_id)
+        snapshot = BalanceSnapshot.objects.get(account_id=incident.account_id)
+        expected = recount_posted(incident.account_id)
+        if snapshot.posted_amount != expected:
+            raise SnapshotStillDivergesError(
+                f"snapshot {snapshot.posted_amount} differs from recount {expected}; "
+                "run repair_snapshot first"
+            )
         incident.closed_at = timezone.now()
         incident.note = note.strip()
         incident.save(update_fields=["closed_at", "note"])
-        BalanceSnapshot.objects.filter(account_id=incident.account_id).update(trusted=True)
+        BalanceSnapshot.objects.filter(pk=snapshot.pk).update(trusted=True)
+    return incident
+
+
+def repair_snapshot(incident_id: int, *, note: str) -> Incident:
+    """Set the snapshot of an open Incident's account to the recount of Entries, by hand.
+
+    The only place a snapshot is rewritten, and only on an explicit operator command with a
+    reason (ADR-0003). The snapshot stays untrusted; `close_incident` returns trust.
+    """
+    if not note.strip():
+        raise IncidentNoteRequiredError("repairing a snapshot requires a note")
+    with transaction.atomic():
+        incident = _lock_open_incident(incident_id)
+        Account.objects.select_for_update().get(pk=incident.account_id)
+        snapshot = BalanceSnapshot.objects.get(account_id=incident.account_id)
+        recounted = recount_posted(incident.account_id)
+        incident.repaired_from = snapshot.posted_amount
+        incident.repaired_to = recounted
+        incident.repaired_at = timezone.now()
+        incident.repair_note = note.strip()
+        incident.save(update_fields=["repaired_from", "repaired_to", "repaired_at", "repair_note"])
+        BalanceSnapshot.objects.filter(pk=snapshot.pk).update(posted_amount=recounted)
     return incident

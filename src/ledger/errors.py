@@ -82,6 +82,12 @@ class IncidentNoteRequiredError(LedgerError):
     code = "incident_note_required"
 
 
+class SnapshotStillDivergesError(LedgerError):
+    """The snapshot differs from the recount; only an explicit repair_snapshot fixes that."""
+
+    code = "snapshot_still_diverges"
+
+
 class HoldNotFoundError(LedgerError):
     code = "hold_not_found"
     status = HTTPStatus.NOT_FOUND

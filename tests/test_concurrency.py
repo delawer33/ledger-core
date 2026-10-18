@@ -20,7 +20,7 @@ from psycopg.errors import DeadlockDetected
 from ledger.accounts.models import Account
 from ledger.accounts.service import create_account
 from ledger.balances.models import BalanceSnapshot
-from ledger.balances.service import available_amount
+from ledger.balances.service import available_amount, recount_posted
 from ledger.errors import InsufficientFundsError
 from ledger.holds.models import Hold, HoldStatus
 from ledger.holds.service import place_hold
@@ -277,3 +277,27 @@ def test_holds_and_transfers_on_one_account_never_push_available_below_zero() ->
     assert Hold.objects.filter(status=HoldStatus.ACTIVE).count() > 0
     assert available_amount(account) == funds - totals["held"] - totals["moved"] >= 0
     assert_invariants()
+
+
+def test_snapshot_repair_under_concurrent_postings_equals_the_recount() -> None:
+    from ledger.reconciliation.models import Incident
+    from ledger.reconciliation.service import reconcile, repair_snapshot
+
+    account = _funded(10_000)
+    sink = create_account(currency="RUB", account_type="liability", owner="sink").pk
+    BalanceSnapshot.objects.filter(account_id=account).update(posted_amount=12_345)
+    reconcile()
+    incident_id = Incident.objects.get(account_id=account).pk
+
+    def work(index: int) -> None:
+        if index == 0:
+            repair_snapshot(incident_id, note="concurrent repair")
+            return
+        for op in range(OPS_PER_THREAD):
+            _transfer(account, sink, 1, key=f"r{index}-{op}")
+
+    run_threads(THREADS, work)
+
+    snapshot = BalanceSnapshot.objects.get(account_id=account)
+    assert snapshot.posted_amount == recount_posted(account)
+    assert snapshot.posted_amount == 10_000 - (THREADS - 1) * OPS_PER_THREAD

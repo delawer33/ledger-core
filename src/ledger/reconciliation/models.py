@@ -12,6 +12,11 @@ class Incident(models.Model):
     opened_at = models.DateTimeField(auto_now_add=True)
     closed_at = models.DateTimeField(null=True, blank=True)
     note = models.TextField(blank=True, default="")
+    # Filled by repair_snapshot: what the snapshot was, what it became, when and why (ADR-0017).
+    repaired_from = models.BigIntegerField(null=True, blank=True)
+    repaired_to = models.BigIntegerField(null=True, blank=True)
+    repaired_at = models.DateTimeField(null=True, blank=True)
+    repair_note = models.TextField(blank=True, default="")
 
     class Meta:
         constraints = [

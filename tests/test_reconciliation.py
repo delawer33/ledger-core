@@ -13,9 +13,13 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from ledger.balances.models import BalanceSnapshot
+from ledger.errors import (
+    IncidentNoteRequiredError,
+    IncidentNotFoundError,
+)
 from ledger.holds.models import Hold
 from ledger.reconciliation.models import Incident
-from ledger.reconciliation.service import reconcile
+from ledger.reconciliation.service import close_incident, reconcile, repair_snapshot
 
 pytestmark = pytest.mark.django_db
 
@@ -120,7 +124,7 @@ def test_close_requires_note_and_restores_trust(client: Client) -> None:
         call_command("close_incident", str(incident.pk))
     assert Incident.objects.get().closed_at is None
 
-    _corrupt(account, 1000)  # the operator repaired the data by hand
+    call_command("repair_snapshot", str(incident.pk), note="recounted from entries")
     call_command("close_incident", str(incident.pk), note="bug found, snapshot repaired")
 
     incident.refresh_from_db()
@@ -282,3 +286,58 @@ def _post_raw_overdraft(account: int, other: int, amount: int) -> None:
     )
     BalanceSnapshot.objects.filter(account_id=account).update(posted_amount=1000 - amount)
     BalanceSnapshot.objects.filter(account_id=other).update(posted_amount=amount)
+
+
+def test_close_refuses_a_diverging_snapshot_and_keeps_it_untrusted(client: Client) -> None:
+    account, other = _untrusted_overstated(client)
+    incident = Incident.objects.get()
+
+    with pytest.raises(CommandError, match="snapshot_still_diverges"):
+        call_command("close_incident", str(incident.pk), note="looked fine")
+
+    incident.refresh_from_db()
+    assert incident.closed_at is None
+    assert not BalanceSnapshot.objects.get(account_id=account).trusted
+    assert _transfer(client, account, other, 1500).status_code == 422
+    assert _balance(client, account) == 1000
+
+
+def test_repair_then_close_restores_trust_and_records_before_and_after(client: Client) -> None:
+    account, other = _untrusted_overstated(client)
+    incident = Incident.objects.get()
+
+    call_command("repair_snapshot", str(incident.pk), note="inflated by bug 42")
+    snapshot = BalanceSnapshot.objects.get(account_id=account)
+    assert snapshot.posted_amount == 1000
+    assert not snapshot.trusted  # repair alone does not return trust
+    call_command("close_incident", str(incident.pk), note="verified")
+
+    incident.refresh_from_db()
+    assert (incident.repaired_from, incident.repaired_to) == (1777, 1000)
+    assert incident.repair_note == "inflated by bug 42"
+    assert incident.repaired_at is not None
+    assert incident.closed_at is not None
+    assert BalanceSnapshot.objects.get(account_id=account).trusted
+    assert _transfer(client, account, other, 1500).status_code == 422
+    assert _transfer(client, account, other, 1000).status_code == 201
+    assert reconcile().clean
+
+
+def test_repair_requires_a_note_and_an_open_incident(client: Client) -> None:
+    account, _ = _untrusted_overstated(client)
+    incident = Incident.objects.get()
+
+    with pytest.raises(CommandError, match="incident_note_required"):
+        call_command("repair_snapshot", str(incident.pk), note="  ")
+    with pytest.raises(CommandError):
+        call_command("repair_snapshot", str(incident.pk))
+    assert BalanceSnapshot.objects.get(account_id=account).posted_amount == 1777
+
+    repair_snapshot(incident.pk, note="fix")
+    close_incident(incident.pk, note="done")
+    with pytest.raises(CommandError, match="incident_not_found"):
+        call_command("repair_snapshot", str(incident.pk), note="again")
+    with pytest.raises(IncidentNotFoundError):
+        repair_snapshot(incident.pk, note="again")
+    with pytest.raises(IncidentNoteRequiredError):
+        repair_snapshot(incident.pk, note="")

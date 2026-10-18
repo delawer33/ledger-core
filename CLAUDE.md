@@ -53,7 +53,7 @@ src/ledger/             единственное приложение; моду�
   holds/                Hold; service.py (place, capture, release, expire), tasks.py (expire_holds, цепочка hold-expiry)
   chains/               TaskChain, service.py: ensure_chain / schedule_next, одна живая цепочка самопланирующейся задачи (ADR-0012)
   outbox/               OutboxEvent, DeliveredEvent; contract.py, service.py (emit: единственная запись событий), relay.py, consumer.py, tasks.py (контракт: docs/outbox.md)
-  reconciliation/       Incident, service.py (reconcile, close_incident), tasks.py (reconcile_task, цепочка reconciliation); при открытом Incident движок и холды берут Posted из Entry (ADR-0015)
+  reconciliation/       Incident, service.py (reconcile, repair_snapshot, close_incident; close отказывает при расхождении снапшота, ADR-0017), tasks.py (reconcile_task, цепочка reconciliation); при открытом Incident движок и холды берут Posted из Entry (ADR-0015)
   scheduler.py          SCHEDULED: реестр периодических цепочек, ensure_scheduled (ADR-0016); команда run_scheduler
   invariants.py         check_invariants / assert_invariants: сумма Posted = 0, Available >= 0, снапшот = пересчёт (ADR-0013)
   api.py                NinjaAPI под /api/v1: монтирует роутеры областей, маппит LedgerError в ответ
@@ -64,8 +64,8 @@ src/ledger/             единственное приложение; моду�
   admin.py              реэкспорт admin-модулей областей; readonly_admin.py: общая read-only база
   api.py                NinjaAPI, монтируется под /api/v1
   models.py             только реэкспорт моделей областей (Django ищет модели здесь)
-  migrations/           0001 схема, 0002 триггеры Postgres на Entry
-  management/commands/  seed, reconcile [--enqueue], close_incident <id> --note, дальше команды областей
+  migrations/           0001 схема, 0002 триггеры Postgres на Entry, 0005 поля repair в Incident
+  management/commands/  seed, reconcile [--enqueue], repair_snapshot <id> --note, close_incident <id> --note, дальше команды областей
 tests/                  pytest + pytest-django против настоящего Postgres; test_concurrency.py (маркер concurrency, ADR-0013)
 docs/adr/               решения
 ```

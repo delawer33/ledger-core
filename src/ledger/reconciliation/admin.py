@@ -7,6 +7,7 @@ from ledger.reconciliation.models import Incident
 @admin.register(Incident)
 class IncidentAdmin(ReadOnlyModelAdmin[Incident]):
     list_display = ("id", "account", "expected", "actual", "opened_at", "closed_at", "is_open")
+    readonly_fields = ("repaired_from", "repaired_to", "repaired_at", "repair_note")
     list_filter = (("closed_at", admin.EmptyFieldListFilter),)
     search_fields = ("account__owner",)
     list_select_related = ("account",)
