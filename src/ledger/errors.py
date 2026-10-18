@@ -23,6 +23,15 @@ class AccountNotFoundError(LedgerError):
     status = HTTPStatus.NOT_FOUND
 
 
+class TransactionNotFoundError(LedgerError):
+    code = "transaction_not_found"
+    status = HTTPStatus.NOT_FOUND
+
+
+class TransactionAlreadyReversedError(LedgerError):
+    code = "transaction_already_reversed"
+
+
 class InvalidEntriesError(LedgerError):
     code = "invalid_entries"
 

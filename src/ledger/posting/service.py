@@ -16,9 +16,11 @@ from ledger.errors import (
     IdempotencyKeyInUseError,
     InsufficientFundsError,
     InvalidEntriesError,
+    TransactionAlreadyReversedError,
+    TransactionNotFoundError,
 )
 from ledger.outbox.models import OutboxEvent
-from ledger.posting.models import Entry, Transaction
+from ledger.posting.models import Entry, Transaction, TransactionKind
 
 # Liability and asset accounts may not go below zero Available Balance; the rest may.
 NON_NEGATIVE_TYPES = frozenset({AccountType.LIABILITY, AccountType.ASSET})
@@ -68,6 +70,30 @@ def post_transaction(
             )
         OutboxEvent.objects.create(type="transaction.posted", payload=_event_payload(posted, lines))
     return posted
+
+
+def reverse_transaction(*, transaction_id: int, source_system: str, key: str) -> Transaction:
+    """Post a Reversal: the original's Entries with opposite signs, through the posting engine."""
+    with transaction.atomic():
+        # Locking the original serialises concurrent reversals; the unique constraint backs it up.
+        original = Transaction.objects.select_for_update().filter(pk=transaction_id).first()
+        if original is None:
+            raise TransactionNotFoundError(f"transaction {transaction_id} does not exist")
+        if Transaction.objects.filter(reversal_of=original).exists():
+            raise TransactionAlreadyReversedError(f"transaction {transaction_id} is reversed")
+        lines = [
+            EntryLine(account_id=account_id, amount=-amount)
+            for account_id, amount in original.entries.order_by("pk").values_list(
+                "account_id", "amount"
+            )
+        ]
+        return post_transaction(
+            kind=TransactionKind.REVERSAL,
+            lines=lines,
+            source_system=source_system,
+            key=key,
+            reversal_of=original,
+        )
 
 
 def _validate_shape(lines: Sequence[EntryLine]) -> None:
