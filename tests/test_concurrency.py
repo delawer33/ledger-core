@@ -35,10 +35,16 @@ from .concurrency_support import (
     OPS_PER_THREAD,
     REPEATERS,
     THREADS,
+    check_config,
     run_threads,
 )
 
 pytestmark = [pytest.mark.concurrency, pytest.mark.django_db(transaction=True)]
+
+
+@pytest.fixture(autouse=True)
+def _valid_concurrency_config() -> None:
+    check_config()
 
 
 def _funded(amount: int) -> int:
@@ -133,7 +139,9 @@ def _run_opposite_pair(a: int, b: int, *, tag: str) -> list[bool]:
         try:
             _transfer(source, target, 7, key=f"pair-{tag}-{index}")
         except OperationalError as exc:
-            return isinstance(exc.__cause__, DeadlockDetected)
+            if not isinstance(exc.__cause__, DeadlockDetected):
+                raise  # any other database failure is a real error, not a "survived" run
+            return True
         return False
 
     return run_threads(2, work)
@@ -154,6 +162,11 @@ def test_lock_ordering_is_what_prevents_deadlock_on_opposite_transfers(
     # Ordered (the real engine): the peer waits for the first lock, nobody deadlocks.
     log, _ = _hold_after_first_lock(monkeypatch, wait=1.5)
     assert _run_opposite_pair(a, b, tag="ordered") == [False, False]
+    # Both transfers really landed, and each moved 7 out and 7 in: balances are unchanged.
+    ordered_keys = Transaction.objects.filter(key__startswith="pair-ordered-")
+    assert set(ordered_keys.values_list("key", flat=True)) == {"pair-ordered-0", "pair-ordered-1"}
+    for account_id in (a, b):
+        assert BalanceSnapshot.objects.get(account_id=account_id).posted_amount == 1_000
     assert log == sorted(log[:2]) + sorted(log[2:])  # each transfer locked low id first
     assert_invariants()
 

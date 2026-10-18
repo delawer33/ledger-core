@@ -1,12 +1,14 @@
 import datetime as dt
+import json
 from typing import Any
 
 import pytest
 from django.contrib.admin.sites import site
 from django.contrib.auth.models import User
 from django.core.management import call_command
-from django.test import Client
-from django.urls import reverse
+from django.http import HttpRequest, HttpResponse
+from django.test import Client, override_settings
+from django.urls import path, reverse
 from django.utils import timezone
 
 from ledger.accounts.admin import AccountAdmin
@@ -148,6 +150,27 @@ def test_seed_without_full_superuser_settings_creates_no_user(
     assert not User.objects.exists()
 
 
+def _csrf_probe(request: HttpRequest) -> HttpResponse:
+    return HttpResponse("ok")
+
+
+urlpatterns = [path("csrf-probe/", _csrf_probe)]
+
+
+@pytest.mark.django_db
+@override_settings(ROOT_URLCONF=__name__)
+def test_csrf_middleware_rejects_unsafe_request_without_token() -> None:
+    """A plain view, no csrf_protect decorator: only `CsrfViewMiddleware` can answer 403.
+
+    The admin views are wrapped by `csrf_protect` themselves, so a POST to the admin would be
+    rejected even with the middleware removed. Mutation check: delete the middleware from
+    MIDDLEWARE and this test fails (200).
+    """
+    client = Client(enforce_csrf_checks=True)
+
+    assert client.post("/csrf-probe/").status_code == 403
+
+
 @pytest.mark.django_db
 def test_admin_post_without_csrf_token_is_rejected() -> None:
     client = Client(enforce_csrf_checks=True)
@@ -160,10 +183,25 @@ def test_admin_post_without_csrf_token_is_rejected() -> None:
 @pytest.mark.django_db
 def test_api_post_works_without_csrf_token_and_admin_is_not_framable() -> None:
     client = Client(enforce_csrf_checks=True)
+    source = Account.objects.create(currency="RUB", type="equity", owner="platform")
+    target = Account.objects.create(currency="RUB", type="liability", owner="seller:csrf")
+    body = {
+        "kind": "transfer",
+        "entries": [
+            {"account_id": source.pk, "amount": -5},
+            {"account_id": target.pk, "amount": 5},
+        ],
+    }
 
-    response = client.post("/api/v1/transfers", data="{}", content_type="application/json")
+    response = client.post(
+        "/api/v1/transactions",
+        data=json.dumps(body),
+        content_type="application/json",
+        headers={"Idempotency-Key": "csrf-1", "X-Source-System": "storefront"},
+    )
 
-    assert response.status_code != 403
+    assert response.status_code == 201
+    assert Transaction.objects.filter(key="csrf-1").exists()
     admin_page = client.get(reverse("admin:login"))
     assert admin_page.headers["X-Frame-Options"] == "DENY"
 
