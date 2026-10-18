@@ -103,3 +103,14 @@ class CaptureExceedsHoldError(LedgerError):
 
 class InvalidHoldError(LedgerError):
     code = "invalid_hold"
+
+
+class WorkerPresumedDead(LedgerError):
+    """Recorded as the exception class of a task pass whose worker is presumed dead.
+
+    `chains.service.fail_orphaned_runs` marks the RUNNING row of a reassigned chain FAILED with
+    this class's dotted path, so `TaskError.exception_class` of such a row imports (ADR-0012).
+    It is never raised: the worker that would have raised it is gone.
+    """
+
+    code = "worker_presumed_dead"

@@ -28,13 +28,20 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from django.conf import settings
-from django.db import close_old_connections, connection, transaction
+from django.db import (
+    DatabaseError,
+    InterfaceError,
+    close_old_connections,
+    connection,
+    transaction,
+)
 from django.tasks import Task
 from django.tasks.base import TaskResultStatus
 from django.utils import timezone
 from django_tasks_db.models import DBTaskResult
 
 from ledger.chains.models import TaskChain
+from ledger.errors import WorkerPresumedDead
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +93,7 @@ def fail_orphaned_runs(task: Task[..., Any], current_token: str, *, now: datetim
     return orphans.update(
         status=TaskResultStatus.FAILED,
         finished_at=now,
-        exception_class_path="ledger.chains.service.WorkerPresumedDead",
+        exception_class_path=f"{WorkerPresumedDead.__module__}.{WorkerPresumedDead.__qualname__}",
         traceback=reason,
     )
 
@@ -107,9 +114,14 @@ def heartbeat(name: str, token: str) -> Iterator[None]:
             while not stop.wait(grace / 3):
                 try:
                     _extend_lease(name, token, timezone.now() + timedelta(seconds=grace))
-                except Exception:
+                except (DatabaseError, InterfaceError):
+                    # A lost or failed DB connection is expected; try again on the next beat.
                     logger.exception("Lease heartbeat of chain %s failed", name)
                     close_old_connections()
+        except BaseException:
+            # Anything else is a bug: record it and let the thread die loudly.
+            logger.exception("Lease heartbeat of chain %s stopped on an unexpected error", name)
+            raise
         finally:
             connection.close()
 

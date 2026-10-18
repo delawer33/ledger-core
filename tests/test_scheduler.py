@@ -18,6 +18,7 @@ from ledger.accounts.models import AccountType
 from ledger.accounts.service import create_account
 from ledger.chains.models import TaskChain
 from ledger.chains.service import ensure_chain, heartbeat
+from ledger.errors import WorkerPresumedDead
 from ledger.holds import tasks as hold_tasks
 from ledger.holds.models import Hold, HoldStatus
 from ledger.holds.service import place_hold
@@ -213,6 +214,7 @@ def test_running_row_of_a_reassigned_chain_is_marked_failed() -> None:
     assert stuck.status == TaskResultStatus.FAILED
     assert "presumed dead" in stuck.traceback
     assert stuck.finished_at is not None
+    assert stuck.task_result.errors[0].exception_class is WorkerPresumedDead
 
 
 def test_running_row_of_the_current_chain_is_left_alone() -> None:
