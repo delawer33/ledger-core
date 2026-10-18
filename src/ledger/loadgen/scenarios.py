@@ -22,7 +22,7 @@ class WorkerContext:
     index: int
     run_id: str
     counter: int = 0
-    sent: list[tuple[str, dict[str, object], int]] = field(default_factory=list)
+    sent: list[tuple[str, dict[str, object], int, bytes]] = field(default_factory=list)
 
     def next_key(self) -> str:
         self.counter += 1
@@ -47,7 +47,7 @@ def _transfer(ctx: WorkerContext, source: int, target: int) -> Reply:
     key = ctx.next_key()
     reply = ctx.client.post("transfer", "/transactions", body, key)
     if reply.ok:
-        ctx.sent.append((key, body, reply.status))
+        ctx.sent.append((key, body, reply.status, reply.raw))
     return reply
 
 
@@ -74,10 +74,14 @@ def mixed_step(ctx: WorkerContext) -> list[Reply]:
 
 
 def _replay(ctx: WorkerContext) -> Reply:
-    """Resend an earlier transfer with its Idempotency-Key; the stored reply must come back."""
-    key, body, original_status = ctx.rng.choice(ctx.sent)
+    """Resend an earlier transfer with its Idempotency-Key; the stored reply must come back.
+
+    Status and body must equal the first reply byte for byte (ADR-0009). A second transaction
+    (201 with another id) is a broken guarantee, reported as replay_mismatch.
+    """
+    key, body, original_status, original_raw = ctx.rng.choice(ctx.sent)
     reply = ctx.client.post("replay", "/transactions", body, key)
-    if reply.ok and reply.status != original_status:
+    if reply.status != original_status or reply.raw != original_raw:
         return Reply("replay", reply.status, "replay_mismatch", reply.latency_ms, reply.body)
     return reply
 

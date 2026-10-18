@@ -23,6 +23,10 @@
 
 - `ops_per_s` считает успешные (2xx) запросы, перцентили все запросы.
 - `deadlocks` это приращение `pg_stat_database.deadlocks` за прогон.
-- `status` равен `FAILED`, если проверка инвариантов не прошла; такие отчёты в таблицу не берутся.
+- `results.replay_mismatches` считает повторы, чей статус или тело не совпали с первым ответом байт в байт;
+  они же в `errors_by_code`.
+- Перед стартом генератор сверяет `DATABASE_URL` с БД за `--base-url` через `database_id` в `/health`
+  и отказывается запускаться при несовпадении.
+- `status` равен `FAILED`, если проверка инвариантов не прошла или есть `replay_mismatch`; такие отчёты в таблицу не берутся.
 
 Таблица для README: `uv run python manage.py loadgen table docs/load/*.json`.

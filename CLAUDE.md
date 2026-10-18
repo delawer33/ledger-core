@@ -50,7 +50,9 @@ Swagger: `/api/v1/docs`, health: `/api/v1/health`, админка только �
    на каждый сценарий; `--container-limits "api 2cpu/1g, db 2cpu/2g"` попадает в отчёт рядом с железом и git sha.
 3. Остановить стек: `docker compose -p ledger-load stop` (никогда `down -v`).
 
-Генератор сам заводит и пополняет счета (из `system:clearing`), воркеры ходят по HTTP. Отчёт без прошедших
+Генератор сам заводит и пополняет счета (из `system:clearing`), воркеры ходят по HTTP. Перед стартом `DATABASE_URL` сверяется
+с БД сервиса (`database_id` в `/health`), при несовпадении генератор не запускается. Повтор запроса сверяется
+с первым ответом байт в байт, расхождение (`replay_mismatch`) делает отчёт FAILED. Отчёт без прошедших
 инвариантов помечен FAILED, команда выходит с ошибкой. Формат и сырые прогоны: `docs/load/README.md`.
 Код: `src/ledger/loadgen/` (`scenarios.py`, `runner.py`, `report.py`), смоук-тесты `tests/test_loadgen.py`.
 

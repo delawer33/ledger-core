@@ -36,6 +36,7 @@ def summarize(replies: Iterable[Reply], elapsed: float) -> dict[str, Any]:
     by_status = Counter(str(r.status) for r in all_replies if not r.ok)
     by_code = Counter(r.code or f"http_{r.status}" for r in all_replies if not r.ok)
     return {
+        "replay_mismatches": by_code.get("replay_mismatch", 0),
         "requests": len(all_replies),
         "ok": ok,
         "elapsed_s": round(elapsed, 3),
@@ -128,6 +129,11 @@ def collect_table(paths: Sequence[Path]) -> str:
     reports: list[dict[str, Any]] = []
     for path in paths:
         report = json.loads(path.read_text())
+        codes = (report.get("results") or {}).get("errors_by_code") or {}
+        if "replay_mismatch" in codes:
+            raise ReportRejectedError(
+                f"{path}: replay_mismatch, idempotency is broken, report is FAILED"
+            )
         invariants = report.get("invariants") or {}
         if report.get("status") != OK or not invariants.get("ok"):
             raise ReportRejectedError(f"{path}: invariants did not pass, report is FAILED")

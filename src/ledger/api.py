@@ -5,6 +5,7 @@ from django.http import HttpRequest, HttpResponse
 from ninja import NinjaAPI, Schema, Status
 
 from ledger.accounts.router import router as accounts_router
+from ledger.dbidentity import database_identity
 from ledger.errors import LedgerError
 from ledger.holds.router import router as holds_router
 from ledger.posting.router import router as transactions_router
@@ -30,6 +31,7 @@ def ledger_error(request: HttpRequest, exc: LedgerError) -> HttpResponse:
 class HealthOut(Schema):
     status: str
     database: str
+    database_id: str | None = None
 
 
 @api.get("/health", response={200: HealthOut, 503: HealthOut}, tags=["health"])
@@ -41,4 +43,4 @@ def health(request: HttpRequest) -> Status[HealthOut]:  # noqa: ARG001
             cursor.fetchone()
     except DatabaseError:
         return Status(503, HealthOut(status="error", database="unavailable"))
-    return Status(200, HealthOut(status="ok", database="ok"))
+    return Status(200, HealthOut(status="ok", database="ok", database_id=database_identity()))

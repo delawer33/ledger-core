@@ -1,4 +1,5 @@
 import json
+import random
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,8 @@ from ledger.accounts.models import Account
 from ledger.balances.models import BalanceSnapshot
 from ledger.loadgen import report as reporting
 from ledger.loadgen.client import Reply
-from ledger.loadgen.runner import LoadgenError, RunParams, run_load
+from ledger.loadgen.runner import LoadgenError, RunParams, _check_same_database, run_load
+from ledger.loadgen.scenarios import WorkerContext, _replay
 
 
 def _run(live_server: Any, scenario: str) -> dict[str, Any]:
@@ -137,3 +139,65 @@ def test_summary_statistics() -> None:
     assert summary["p99_ms"] == 99.0
     assert summary["errors_by_http"] == {"422": 1}
     assert summary["errors_by_code"] == {"insufficient_funds": 1}
+
+
+class _ReplayingClient:
+    """Stands in for ApiClient: answers every post with a fixed reply."""
+
+    def __init__(self, reply: Reply) -> None:
+        self.reply = reply
+
+    def post(self, name: str, path: str, body: dict[str, Any], key: str) -> Reply:
+        return self.reply
+
+
+def _replay_ctx(client: Any) -> WorkerContext:
+    ctx = WorkerContext(client=client, accounts=[1, 2], rng=random.Random(1), index=0, run_id="t")
+    ctx.sent.append(("k", {"kind": "transfer"}, 201, b'{"id": 1}'))
+    return ctx
+
+
+def test_replay_with_other_body_and_same_status_is_a_mismatch() -> None:
+    second_transaction = Reply("replay", 201, None, 1.0, {"id": 2}, b'{"id": 2}')
+
+    reply = _replay(_replay_ctx(_ReplayingClient(second_transaction)))
+
+    assert reply.code == "replay_mismatch"
+    assert not reply.ok
+    summary = reporting.summarize([reply], 1.0)
+    assert summary["replay_mismatches"] == 1
+    assert summary["ok"] == 0
+    assert summary["errors_by_code"] == {"replay_mismatch": 1}
+
+
+def test_replay_with_identical_bytes_passes() -> None:
+    same = Reply("replay", 201, None, 1.0, {"id": 1}, b'{"id": 1}')
+
+    assert _replay(_replay_ctx(_ReplayingClient(same))).code is None
+
+
+def test_table_rejects_report_with_replay_mismatch(tmp_path: Path) -> None:
+    report = _report("OK", True)
+    report["results"] = reporting.summarize(
+        [Reply("replay", 201, "replay_mismatch", 5.0, {}, b"x")], 1.0
+    )
+    path = tmp_path / "mismatch.json"
+    path.write_text(json.dumps(report))
+
+    with pytest.raises(reporting.ReportRejectedError, match="replay_mismatch"):
+        reporting.collect_table([path])
+
+
+def test_generator_pointed_at_another_database_refuses_to_start(
+    live_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("ledger.loadgen.runner.database_identity", lambda: "another-database")
+
+    with pytest.raises(LoadgenError, match="another database"):
+        _run(live_server, "random")
+
+
+def test_service_without_database_id_is_refused() -> None:
+    params = RunParams("http://x/api/v1", "random", 1, 1.0, 2, 1)
+    with pytest.raises(LoadgenError, match="database_id"):
+        _check_same_database(params, {"status": "ok"})

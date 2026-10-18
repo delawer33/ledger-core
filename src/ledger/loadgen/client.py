@@ -19,10 +19,12 @@ class Reply:
     code: str | None
     latency_ms: float
     body: dict[str, Any]
+    raw: bytes = b""
 
     @property
     def ok(self) -> bool:
-        return 200 <= self.status < 300
+        """2xx and not a broken guarantee: a replay_mismatch keeps its 2xx status but is an error."""
+        return 200 <= self.status < 300 and self.code != "replay_mismatch"
 
 
 class ApiClient:
@@ -71,7 +73,7 @@ class ApiClient:
             parsed = {}
         data = parsed if isinstance(parsed, dict) else {}
         code = data.get("code") if status >= 400 else None
-        return Reply(name, status, str(code) if code is not None else None, latency, data)
+        return Reply(name, status, str(code) if code is not None else None, latency, data, raw)
 
     def post(self, name: str, path: str, body: dict[str, Any], key: str) -> Reply:
         return self.request(name, "POST", path, body, key)
