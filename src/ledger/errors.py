@@ -58,3 +58,12 @@ class IdempotencyKeyReusedError(LedgerError):
 class MissingHeaderError(LedgerError):
     code = "missing_header"
     status = HTTPStatus.BAD_REQUEST
+
+
+class IncidentNotFoundError(LedgerError):
+    code = "incident_not_found"
+    status = HTTPStatus.NOT_FOUND
+
+
+class IncidentNoteRequiredError(LedgerError):
+    code = "incident_note_required"
