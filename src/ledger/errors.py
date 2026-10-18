@@ -48,6 +48,12 @@ class InsufficientFundsError(LedgerError):
     code = "insufficient_funds"
 
 
+class SystemAccountNotFoundError(LedgerError):
+    """No System Account for a fee or payout in the operation's currency (not seeded)."""
+
+    code = "system_account_not_found"
+
+
 class IdempotencyKeyReusedError(LedgerError):
     """The Idempotency Key was already used for a different request."""
 

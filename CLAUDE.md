@@ -47,7 +47,7 @@ src/config/             Django-проект: settings.py (всё из env), urls
 src/ledger/             единственное приложение; модули по доменным областям, не по слоям
   accounts/             Account, системные счета (system.py), admin.py с Posted/Available
   balances/             BalanceSnapshot
-  posting/              Transaction, Entry
+  posting/              Transaction, Entry; POST /transactions принимает kind=transfer (entries) и kind=fee|payout (account_id + amount, системный счёт подставляет ядро, ADR-0018)
   idempotency/          IdempotencyRecord, service.py: run_idempotent (ADR-0009), все мутирующие эндпоинты (включая POST /accounts) идут через него
   holds/                Hold; service.py (place, capture, release, expire), tasks.py (expire_holds, цепочка hold-expiry)
   chains/               TaskChain, service.py: ensure_chain / schedule_next, одна живая цепочка самопланирующейся задачи (ADR-0012)

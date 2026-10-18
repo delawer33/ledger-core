@@ -17,6 +17,7 @@ from ledger.errors import (
     EntriesNotZeroSumError,
     InsufficientFundsError,
     InvalidEntriesError,
+    SystemAccountNotFoundError,
     TransactionAlreadyReversedError,
     TransactionNotFoundError,
 )
@@ -67,6 +68,39 @@ def post_transaction(
             )
         emit("transaction.posted", _event_payload(posted, lines))
     return posted
+
+
+# Kinds the core routes to a System Account itself; the client names only the seller account.
+SYSTEM_DESTINATIONS: dict[str, str] = {
+    TransactionKind.FEE: "system:fee",
+    TransactionKind.PAYOUT: "system:bank_in_transit",
+}
+
+
+def post_to_system_account(
+    *, kind: str, account_id: int, amount: int, source_system: str, key: str
+) -> tuple[Transaction, list[EntryLine]]:
+    """Fee or payout: move `amount` from the seller account to the kind's System Account.
+
+    The System Account is found by owner label in the seller account's currency; the client never
+    names it. Everything else (Available check, currency, outbox) is the engine's.
+    """
+    if kind not in SYSTEM_DESTINATIONS:
+        raise InvalidEntriesError(f"kind {kind} has no System Account")
+    if amount <= 0:
+        raise InvalidEntriesError("the amount of a fee or payout must be positive")
+    seller = Account.objects.filter(pk=account_id).first()
+    if seller is None:
+        raise AccountNotFoundError(f"account {account_id} does not exist")
+    owner = SYSTEM_DESTINATIONS[kind]
+    destination = Account.objects.filter(
+        owner=owner, currency=seller.currency, is_system=True
+    ).first()
+    if destination is None:
+        raise SystemAccountNotFoundError(f"no {owner} account in {seller.currency}")
+    lines = [EntryLine(account_id, -amount), EntryLine(destination.pk, amount)]
+    posted = post_transaction(kind=kind, lines=lines, source_system=source_system, key=key)
+    return posted, lines
 
 
 def _lock_order(account_ids: Sequence[int]) -> list[int]:

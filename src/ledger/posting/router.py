@@ -2,7 +2,7 @@ from typing import Annotated, Literal
 
 from django.http import HttpRequest, HttpResponse
 from ninja import Router, Schema
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from ledger.api_headers import MutationHeaders
 from ledger.errors import TransactionNotFoundError
@@ -27,9 +27,22 @@ class EntryOut(EntryBase):
     amount: int
 
 
-class TransactionIn(Schema):
+class TransferIn(Schema):
     kind: Literal["transfer"]
     entries: Annotated[list[EntryIn], Field(max_length=100)]
+
+
+class SystemTransferIn(Schema):
+    """Fee or payout: the seller account and a positive amount; the core picks the System Account."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["fee", "payout"]
+    account_id: int
+    amount: Amount
+
+
+TransactionIn = Annotated[TransferIn | SystemTransferIn, Field(discriminator="kind")]
 
 
 class TransactionOut(Schema):
@@ -46,16 +59,23 @@ def create_transaction(request: HttpRequest, payload: TransactionIn) -> HttpResp
     headers = MutationHeaders.from_request(request)
 
     def operation() -> StoredReply:
-        posted = service.post_transaction(
-            kind=payload.kind,
-            lines=[service.EntryLine(e.account_id, e.amount) for e in payload.entries],
-            source_system=headers.source_system,
-            key=headers.key,
-        )
+        if isinstance(payload, SystemTransferIn):
+            posted, lines = service.post_to_system_account(
+                kind=payload.kind,
+                account_id=payload.account_id,
+                amount=payload.amount,
+                source_system=headers.source_system,
+                key=headers.key,
+            )
+        else:
+            lines = [service.EntryLine(e.account_id, e.amount) for e in payload.entries]
+            posted = service.post_transaction(
+                kind=payload.kind, lines=lines, source_system=headers.source_system, key=headers.key
+            )
         out = TransactionOut(
             id=posted.pk,
             kind=posted.kind,
-            entries=[EntryOut(account_id=e.account_id, amount=e.amount) for e in payload.entries],
+            entries=[EntryOut(account_id=e.account_id, amount=e.amount) for e in lines],
             posted_at=posted.posted_at.isoformat(),
         )
         return StoredReply(status=201, body=out.model_dump_json())
