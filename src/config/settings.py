@@ -85,6 +85,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # with a database backend: no separate broker.
 TASKS = {"default": {"BACKEND": "django_tasks_db.DatabaseBackend", "QUEUES": ["default"]}}
 
+# Pause between outbox relay passes; the relay task reschedules itself with this delay.
+OUTBOX_RELAY_INTERVAL_SECONDS = int(os.environ.get("OUTBOX_RELAY_INTERVAL_SECONDS", "5"))
+
 USE_TZ = True
 TIME_ZONE = "UTC"
 LANGUAGE_CODE = "en-us"

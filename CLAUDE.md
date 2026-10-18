@@ -16,6 +16,7 @@ docker compose up -d db          # Postgres на 127.0.0.1:55433 (не 5432)
 export DATABASE_URL=postgres://ledger:ledger@127.0.0.1:55433/ledger
 uv run python manage.py migrate  # применить миграции
 uv run python manage.py seed     # системные счета и dev-суперпользователь из DJANGO_SUPERUSER_*, идемпотентно
+uv run python manage.py start_outbox_relay   # поставить relay в очередь; выполняет `manage.py db_worker`
 uv run python manage.py runserver   # или preview "api" из .claude/launch.json
 uv run python manage.py makemigrations   # после правки моделей; применённые миграции не редактировать
 uv run pytest                    # тесты идут в настоящий Postgres; один: uv run pytest tests/test_x.py -k name
@@ -46,7 +47,7 @@ src/ledger/             единственное приложение; моду�
   posting/              Transaction, Entry
   idempotency/          IdempotencyRecord, service.py: run_idempotent (ADR-0009), мутации оборачиваются в него
   holds/                Hold; service.py (place, capture, release, expire), tasks.py (expire_holds)
-  outbox/               OutboxEvent, DeliveredEvent
+  outbox/               OutboxEvent, DeliveredEvent; contract.py, relay.py, consumer.py, tasks.py (контракт: docs/outbox.md)
   reconciliation/       Incident, service.py (reconcile, close_incident), tasks.py (reconcile_task)
   api.py                NinjaAPI под /api/v1: монтирует роутеры областей, маппит LedgerError в ответ
   errors.py             LedgerError и подклассы: машинный код правила + HTTP-статус (ADR-0006)
