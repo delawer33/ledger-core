@@ -14,9 +14,17 @@ from ledger.schemas import Amount
 router = Router(tags=["transactions"])
 
 
-class EntryIn(Schema):
+class EntryBase(Schema):
     account_id: int
+
+
+class EntryIn(EntryBase):
     amount: Amount
+
+
+class EntryOut(EntryBase):
+    # No input limit: stored amounts may exceed MAX_AMOUNT, up to bigint (ADR-0014).
+    amount: int
 
 
 class TransactionIn(Schema):
@@ -27,7 +35,7 @@ class TransactionIn(Schema):
 class TransactionOut(Schema):
     id: int
     kind: str
-    entries: list[EntryIn]
+    entries: list[EntryOut]
     posted_at: str
     reversal_of: int | None = None
     reversed_by: int | None = None
@@ -47,7 +55,7 @@ def create_transaction(request: HttpRequest, payload: TransactionIn) -> HttpResp
         out = TransactionOut(
             id=posted.pk,
             kind=posted.kind,
-            entries=payload.entries,
+            entries=[EntryOut(account_id=e.account_id, amount=e.amount) for e in payload.entries],
             posted_at=posted.posted_at.isoformat(),
         )
         return StoredReply(status=201, body=out.model_dump_json())
@@ -95,7 +103,7 @@ def _to_out(found: Transaction) -> TransactionOut:
         id=found.pk,
         kind=found.kind,
         entries=[
-            EntryIn(account_id=entry.account_id, amount=entry.amount)
+            EntryOut(account_id=entry.account_id, amount=entry.amount)
             for entry in sorted(found.entries.all(), key=lambda entry: entry.pk)
         ],
         posted_at=found.posted_at.isoformat(),

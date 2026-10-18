@@ -7,7 +7,7 @@ from pydantic import Field, StrictInt
 from ledger.limits import MAX_AMOUNT
 
 # Amount is an integer in minor units (ADR-0001), at most MAX_AMOUNT in absolute value (ADR-0014);
-# floats and strings are rejected.
+# floats and strings are rejected. Input only: output schemas use plain int (ADR-0014).
 Amount = Annotated[
     StrictInt,
     Field(

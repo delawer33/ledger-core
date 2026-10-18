@@ -57,7 +57,7 @@ src/ledger/             единственное приложение; моду�
   scheduler.py          SCHEDULED: реестр периодических цепочек, ensure_scheduled (ADR-0016); команда run_scheduler
   invariants.py         check_invariants / assert_invariants: сумма Posted = 0, Available >= 0, снапшот = пересчёт (ADR-0013)
   api.py                NinjaAPI под /api/v1: монтирует роутеры областей, маппит LedgerError в ответ
-  limits.py             лимиты входа: MAX_AMOUNT, MAX_TTL_SECONDS, MAX_HEADER_LENGTH (ADR-0014)
+  limits.py             лимиты входа: MAX_AMOUNT, MAX_TTL_SECONDS, MAX_HEADER_LENGTH (ADR-0014); только вход, выходные схемы без этих ограничений
   errors.py             LedgerError и подклассы: машинный код правила + HTTP-статус (ADR-0006)
   api_headers.py        обязательные заголовки мутаций Idempotency-Key и X-Source-System
   posting/service.py    posting engine: post_transaction, единственная точка движения денег
