@@ -4,5 +4,15 @@ from typing import Annotated
 
 from pydantic import Field, StrictInt
 
-# Amount is a signed 64-bit integer in minor units (ADR-0001); floats and strings are rejected.
-Amount = Annotated[StrictInt, Field(ge=-(2**63), le=2**63 - 1)]
+from ledger.limits import MAX_AMOUNT
+
+# Amount is an integer in minor units (ADR-0001), at most MAX_AMOUNT in absolute value (ADR-0014);
+# floats and strings are rejected.
+Amount = Annotated[
+    StrictInt,
+    Field(
+        ge=-MAX_AMOUNT,
+        le=MAX_AMOUNT,
+        description=f"Integer minor units, absolute value at most {MAX_AMOUNT}.",
+    ),
+]

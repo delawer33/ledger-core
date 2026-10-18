@@ -60,6 +60,19 @@ class MissingHeaderError(LedgerError):
     status = HTTPStatus.BAD_REQUEST
 
 
+class HeaderTooLongError(LedgerError):
+    code = "header_too_long"
+    status = HTTPStatus.BAD_REQUEST
+
+
+class AmountOutOfRangeError(LedgerError):
+    code = "amount_out_of_range"
+
+
+class BalanceOverflowError(LedgerError):
+    code = "balance_overflow"
+
+
 class IncidentNotFoundError(LedgerError):
     code = "incident_not_found"
     status = HTTPStatus.NOT_FOUND

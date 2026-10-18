@@ -11,6 +11,8 @@ from ledger.balances.models import BalanceSnapshot
 from ledger.balances.service import available_amount
 from ledger.errors import (
     AccountNotFoundError,
+    AmountOutOfRangeError,
+    BalanceOverflowError,
     CurrencyMismatchError,
     EntriesNotZeroSumError,
     InsufficientFundsError,
@@ -18,6 +20,7 @@ from ledger.errors import (
     TransactionAlreadyReversedError,
     TransactionNotFoundError,
 )
+from ledger.limits import BALANCE_MAX, BALANCE_MIN, MAX_AMOUNT
 from ledger.outbox.models import OutboxEvent
 from ledger.posting.models import Entry, Transaction, TransactionKind
 
@@ -52,6 +55,7 @@ def post_transaction(
         if missing:
             raise AccountNotFoundError(f"account {missing[0]} does not exist")
         _validate_currency(accounts)
+        _validate_balance_range(lines)
         _validate_funds(lines, accounts)
 
         posted = Transaction.objects.create(
@@ -98,6 +102,10 @@ def _validate_shape(lines: Sequence[EntryLine]) -> None:
         raise InvalidEntriesError("a transaction needs at least two entries")
     if any(line.amount == 0 for line in lines):
         raise InvalidEntriesError("an entry amount must not be zero")
+    if any(abs(line.amount) > MAX_AMOUNT for line in lines):
+        raise AmountOutOfRangeError(
+            f"an entry amount must not exceed {MAX_AMOUNT} in absolute value"
+        )
     if len({line.account_id for line in lines}) != len(lines):
         raise InvalidEntriesError("an account may appear only once in a transaction")
     total = sum(line.amount for line in lines)
@@ -109,6 +117,18 @@ def _validate_currency(accounts: dict[int, Account]) -> None:
     currencies = {account.currency for account in accounts.values()}
     if len(currencies) > 1:
         raise CurrencyMismatchError(f"transaction mixes currencies: {sorted(currencies)}")
+
+
+def _validate_balance_range(lines: Sequence[EntryLine]) -> None:
+    """Posted Balance is a bigint: refuse a posting that would push it out of range."""
+    posted = dict(
+        BalanceSnapshot.objects.filter(
+            account_id__in=[line.account_id for line in lines]
+        ).values_list("account_id", "posted_amount")
+    )
+    for line in lines:
+        if not BALANCE_MIN <= posted.get(line.account_id, 0) + line.amount <= BALANCE_MAX:
+            raise BalanceOverflowError(f"account {line.account_id} balance would overflow")
 
 
 def _validate_funds(lines: Sequence[EntryLine], accounts: dict[int, Account]) -> None:

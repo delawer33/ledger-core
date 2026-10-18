@@ -9,6 +9,7 @@ from ledger.api_headers import MutationHeaders
 from ledger.holds import service
 from ledger.holds.models import Hold
 from ledger.idempotency.service import StoredReply, fingerprint, run_idempotent
+from ledger.limits import MAX_TTL_SECONDS
 from ledger.schemas import Amount
 
 router = Router(tags=["holds"])
@@ -19,7 +20,14 @@ PositiveAmount = Annotated[Amount, Field(gt=0)]
 class HoldIn(Schema):
     account_id: int
     amount: PositiveAmount
-    ttl_seconds: Annotated[StrictInt, Field(gt=0)]
+    ttl_seconds: Annotated[
+        StrictInt,
+        Field(
+            gt=0,
+            le=MAX_TTL_SECONDS,
+            description=f"Hold lifetime in seconds, at most {MAX_TTL_SECONDS} (one year).",
+        ),
+    ]
 
 
 class CaptureIn(Schema):

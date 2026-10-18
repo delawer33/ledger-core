@@ -9,6 +9,7 @@ from ledger.accounts.models import Account
 from ledger.balances.service import available_amount
 from ledger.errors import (
     AccountNotFoundError,
+    AmountOutOfRangeError,
     CaptureExceedsHoldError,
     HoldNotActiveError,
     HoldNotFoundError,
@@ -16,6 +17,7 @@ from ledger.errors import (
     InvalidHoldError,
 )
 from ledger.holds.models import Hold, HoldStatus
+from ledger.limits import MAX_AMOUNT, MAX_TTL_SECONDS
 from ledger.outbox.models import OutboxEvent
 from ledger.posting.models import Transaction, TransactionKind
 from ledger.posting.service import EntryLine, post_transaction
@@ -37,6 +39,10 @@ def place_hold(
         raise InvalidHoldError("hold amount must be positive")
     if ttl_seconds <= 0:
         raise InvalidHoldError("hold ttl must be positive")
+    if amount > MAX_AMOUNT:
+        raise AmountOutOfRangeError(f"hold amount must not exceed {MAX_AMOUNT}")
+    if ttl_seconds > MAX_TTL_SECONDS:
+        raise InvalidHoldError(f"hold ttl must not exceed {MAX_TTL_SECONDS} seconds")
     with transaction.atomic():
         # Same lock as the posting engine takes, so Available cannot change under us.
         account = Account.objects.select_for_update().filter(pk=account_id).first()

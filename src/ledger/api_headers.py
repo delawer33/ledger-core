@@ -2,7 +2,8 @@ from dataclasses import dataclass
 
 from django.http import HttpRequest
 
-from ledger.errors import MissingHeaderError
+from ledger.errors import HeaderTooLongError, MissingHeaderError
+from ledger.limits import MAX_HEADER_LENGTH
 
 
 @dataclass(frozen=True)
@@ -20,4 +21,12 @@ class MutationHeaders:
             raise MissingHeaderError("header X-Source-System is required")
         if not key:
             raise MissingHeaderError("header Idempotency-Key is required")
+        if len(source_system) > MAX_HEADER_LENGTH:
+            raise HeaderTooLongError(
+                f"header X-Source-System is longer than {MAX_HEADER_LENGTH} characters"
+            )
+        if len(key) > MAX_HEADER_LENGTH:
+            raise HeaderTooLongError(
+                f"header Idempotency-Key is longer than {MAX_HEADER_LENGTH} characters"
+            )
         return cls(source_system=source_system, key=key)

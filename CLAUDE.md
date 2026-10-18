@@ -53,6 +53,7 @@ src/ledger/             единственное приложение; моду�
   reconciliation/       Incident, service.py (reconcile, close_incident), tasks.py (reconcile_task)
   invariants.py         check_invariants / assert_invariants: сумма Posted = 0, Available >= 0, снапшот = пересчёт (ADR-0013)
   api.py                NinjaAPI под /api/v1: монтирует роутеры областей, маппит LedgerError в ответ
+  limits.py             лимиты входа: MAX_AMOUNT, MAX_TTL_SECONDS, MAX_HEADER_LENGTH (ADR-0014)
   errors.py             LedgerError и подклассы: машинный код правила + HTTP-статус (ADR-0006)
   api_headers.py        обязательные заголовки мутаций Idempotency-Key и X-Source-System
   posting/service.py    posting engine: post_transaction, единственная точка движения денег
@@ -72,6 +73,8 @@ docs/adr/               решения
 
 - Админка только для чтения (ADR-0006): новая модель регистрируется через `ReadOnlyModelAdmin`.
 - Amount везде `BigIntegerField` в минорных единицах (ADR-0001); float и Decimal не использовать.
+- Лимиты входа в `ledger/limits.py` (ADR-0014): Amount до 10**18 по модулю, TTL холда до года, заголовки
+  `Idempotency-Key`/`X-Source-System` до 255 символов; переполнение баланса это `balance_overflow` (422).
 - Инварианты денег дублируются в БД (ADR-0004): Entry неизменяема, сумма Entry транзакции равна
   нулю. Тест, которому нужен реальный коммит (deferred-триггер), идёт с
   `@pytest.mark.django_db(transaction=True)`.
