@@ -51,7 +51,7 @@ src/ledger/             единственное приложение; моду�
   holds/                Hold; service.py (place, capture, release, expire), tasks.py (expire_holds)
   chains/               TaskChain, service.py: ensure_chain / schedule_next, одна живая цепочка самопланирующейся задачи (ADR-0012)
   outbox/               OutboxEvent, DeliveredEvent; contract.py, service.py (emit: единственная запись событий), relay.py, consumer.py, tasks.py (контракт: docs/outbox.md)
-  reconciliation/       Incident, service.py (reconcile, close_incident), tasks.py (reconcile_task)
+  reconciliation/       Incident, service.py (reconcile, close_incident), tasks.py (reconcile_task); при открытом Incident движок и холды берут Posted из Entry (ADR-0015)
   invariants.py         check_invariants / assert_invariants: сумма Posted = 0, Available >= 0, снапшот = пересчёт (ADR-0013)
   api.py                NinjaAPI под /api/v1: монтирует роутеры областей, маппит LedgerError в ответ
   limits.py             лимиты входа: MAX_AMOUNT, MAX_TTL_SECONDS, MAX_HEADER_LENGTH (ADR-0014)

@@ -174,3 +174,111 @@ def test_recount_is_grouped_in_the_database(client: Client) -> None:
     assert len(entry_selects) == 1
     assert "SUM(" in entry_selects[0]
     assert "GROUP BY" in entry_selects[0]
+
+
+def _transfer(client: Client, source: int, target: int, amount: int) -> Any:
+    body = {
+        "kind": "transfer",
+        "entries": [
+            {"account_id": source, "amount": -amount},
+            {"account_id": target, "amount": amount},
+        ],
+    }
+    return _post(client, "/api/v1/transactions", body)
+
+
+def _untrusted_overstated(client: Client) -> tuple[int, int]:
+    """A funded account (1000) whose snapshot was inflated by 777 and flagged by reconciliation."""
+    account = _funded_account(client, 1000)
+    _corrupt(account, 1777)
+    reconcile()
+    assert not BalanceSnapshot.objects.get(account_id=account).trusted
+    return account, _account(client, "equity")
+
+
+def test_untrusted_overstated_snapshot_does_not_allow_overspending(client: Client) -> None:
+    account, other = _untrusted_overstated(client)
+
+    response = _transfer(client, account, other, 1500)
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "insufficient_funds"
+    assert _transfer(client, account, other, 1000).status_code == 201
+
+
+def test_untrusted_snapshot_keeps_drifting_by_delta_and_stays_untrusted(client: Client) -> None:
+    account, other = _untrusted_overstated(client)
+
+    assert _transfer(client, account, other, 400).status_code == 201
+
+    snapshot = BalanceSnapshot.objects.get(account_id=account)
+    assert (snapshot.posted_amount, snapshot.trusted) == (1377, False)
+    assert _balance(client, account) == 600
+
+
+def test_hold_and_capture_on_untrusted_snapshot_count_from_entries(client: Client) -> None:
+    account, other = _untrusted_overstated(client)
+
+    too_big = _post(
+        client, "/api/v1/holds", {"account_id": account, "amount": 1500, "ttl_seconds": 60}
+    )
+    assert too_big.status_code == 422
+    assert too_big.json()["code"] == "insufficient_funds"
+
+    placed = _post(
+        client, "/api/v1/holds", {"account_id": account, "amount": 800, "ttl_seconds": 60}
+    )
+    assert placed.status_code == 201
+    assert _transfer(client, account, other, 300).status_code == 422  # only 200 available
+    assert _transfer(client, account, other, 200).status_code == 201
+
+
+def test_trusted_snapshot_is_not_recounted_by_the_engine(client: Client) -> None:
+    account = _funded_account(client, 1000)
+    other = _account(client, "equity")
+
+    with CaptureQueriesContext(connection) as queries:
+        assert _transfer(client, account, other, 100).status_code == 201
+
+    assert not [q for q in queries if "SUM(" in q["sql"] and 'FROM "ledger_entry"' in q["sql"]]
+
+
+def test_negative_posted_on_a_restricted_account_opens_an_incident(client: Client) -> None:
+    account = _funded_account(client, 1000)
+    other = _account(client, "equity")
+    # Overdraw behind the engine's back: Entries and snapshot agree, the balance is -388.
+    BalanceSnapshot.objects.filter(account_id=account).update(trusted=True)
+    _post_raw_overdraft(account, other, 1388)
+
+    result = reconcile()
+
+    incident = Incident.objects.get()
+    assert (incident.account_id, incident.expected, incident.actual) == (account, -388, -388)
+    assert result.incidents_opened == [account]
+    assert not result.clean
+    assert not BalanceSnapshot.objects.get(account_id=account).trusted
+    assert reconcile().already_open == [account]
+
+
+def test_negative_posted_on_an_unrestricted_account_is_fine(client: Client) -> None:
+    funded = _funded_account(client, 1000)  # the equity source is at -1000
+
+    result = reconcile()
+
+    assert result.clean
+    assert funded
+    assert Incident.objects.count() == 0
+
+
+def _post_raw_overdraft(account: int, other: int, amount: int) -> None:
+    from ledger.posting.models import Entry, Transaction
+
+    tx = Transaction.objects.create(kind="transfer", source_system="s", key="raw")
+    Entry.objects.bulk_create(
+        [
+            Entry(transaction=tx, account_id=account, amount=-amount),
+            Entry(transaction=tx, account_id=other, amount=amount),
+        ]
+    )
+    BalanceSnapshot.objects.filter(account_id=account).update(posted_amount=1000 - amount)
+    BalanceSnapshot.objects.filter(account_id=other).update(posted_amount=amount)

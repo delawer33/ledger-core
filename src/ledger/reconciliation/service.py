@@ -1,7 +1,7 @@
 """Reconciliation: recount every Posted Balance from Entries and compare with the snapshots.
 
-A mismatch opens an Incident and marks the snapshot untrusted; it never rewrites the snapshot
-(ADR-0003).
+A mismatch, or a negative Posted Balance on an account type that forbids it, opens an Incident
+and marks the snapshot untrusted; it never rewrites the snapshot (ADR-0003, ADR-0015).
 """
 
 import logging
@@ -17,6 +17,7 @@ from ledger.balances.service import recount_posted
 from ledger.errors import IncidentNoteRequiredError, IncidentNotFoundError
 from ledger.holds.models import Hold, HoldStatus
 from ledger.posting.models import Entry
+from ledger.posting.service import NON_NEGATIVE_TYPES
 from ledger.reconciliation.models import Incident
 
 logger = logging.getLogger(__name__)
@@ -41,10 +42,14 @@ def reconcile() -> ReconciliationResult:
         Entry.objects.values_list("account_id").annotate(total=Sum("amount")).order_by()
     )
     snapshots = list(BalanceSnapshot.objects.values_list("account_id", "posted_amount"))
+    restricted = set(
+        Account.objects.filter(type__in=NON_NEGATIVE_TYPES).values_list("pk", flat=True)
+    )
     suspects = [
         account_id
         for account_id, posted in snapshots
         if int(recounted.get(account_id, 0)) != posted
+        or (account_id in restricted and int(recounted.get(account_id, 0)) < 0)
     ]
 
     opened: list[int] = []
@@ -71,10 +76,11 @@ def _confirm_and_open(account_id: int) -> tuple[Incident, bool] | None:
     """Re-check one suspect with the account locked, so a concurrent posting is not a mismatch."""
     with transaction.atomic():
         # Same lock the posting engine takes, so snapshot and Entries are read at one moment.
-        Account.objects.select_for_update().get(pk=account_id)
+        account = Account.objects.select_for_update().get(pk=account_id)
         snapshot = BalanceSnapshot.objects.get(account_id=account_id)
         expected = recount_posted(account_id)
-        if expected == snapshot.posted_amount:
+        overspent = account.type in NON_NEGATIVE_TYPES and expected < 0
+        if expected == snapshot.posted_amount and not overspent:
             return None
         BalanceSnapshot.objects.filter(pk=snapshot.pk).update(trusted=False)
         incident, created = Incident.objects.get_or_create(

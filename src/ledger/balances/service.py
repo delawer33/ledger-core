@@ -21,10 +21,24 @@ def active_holds_total(account_id: int) -> int:
     return int(total or 0)
 
 
+def recount_posted(account_id: int) -> int:
+    """Posted Balance from Entries, summed by the database."""
+    total = Entry.objects.filter(account_id=account_id).aggregate(total=Sum("amount"))["total"]
+    return int(total or 0)
+
+
 def posted_amount(account_id: int) -> int:
-    return int(
-        BalanceSnapshot.objects.values_list("posted_amount", flat=True).get(account_id=account_id)
+    """Posted Balance: the snapshot while trusted, a recount of Entries while an Incident is open.
+
+    The engine calls this under the account lock, so the recount is consistent (ADR-0003).
+    """
+    row = BalanceSnapshot.objects.values_list("posted_amount", "trusted").filter(
+        account_id=account_id
     )
+    snapshot = row.first()
+    if snapshot is None or not snapshot[1]:  # no snapshot is as untrusted as a flagged one
+        return recount_posted(account_id)
+    return int(snapshot[0])
 
 
 def available_amount(account_id: int) -> int:
@@ -32,17 +46,6 @@ def available_amount(account_id: int) -> int:
     return posted_amount(account_id) - active_holds_total(account_id)
 
 
-def recount_posted(account_id: int) -> int:
-    """Posted Balance from Entries, summed by the database."""
-    total = Entry.objects.filter(account_id=account_id).aggregate(total=Sum("amount"))["total"]
-    return int(total or 0)
-
-
 def get_balance(account: Account) -> Balance:
-    """Read from the snapshot, unless an open Incident made it untrusted (ADR-0003)."""
-    posted, trusted = BalanceSnapshot.objects.values_list("posted_amount", "trusted").get(
-        account=account
-    )
-    if not trusted:
-        posted = recount_posted(account.pk)
+    posted = posted_amount(account.pk)
     return Balance(posted=posted, available=posted - active_holds_total(account.pk))

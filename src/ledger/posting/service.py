@@ -8,7 +8,7 @@ from django.db.models import F
 
 from ledger.accounts.models import Account, AccountType
 from ledger.balances.models import BalanceSnapshot
-from ledger.balances.service import available_amount
+from ledger.balances.service import available_amount, posted_amount
 from ledger.errors import (
     AccountNotFoundError,
     AmountOutOfRangeError,
@@ -140,13 +140,8 @@ def _validate_currency(accounts: dict[int, Account]) -> None:
 
 def _validate_balance_range(lines: Sequence[EntryLine]) -> None:
     """Posted Balance is a bigint: refuse a posting that would push it out of range."""
-    posted = dict(
-        BalanceSnapshot.objects.filter(
-            account_id__in=[line.account_id for line in lines]
-        ).values_list("account_id", "posted_amount")
-    )
     for line in lines:
-        if not BALANCE_MIN <= posted.get(line.account_id, 0) + line.amount <= BALANCE_MAX:
+        if not BALANCE_MIN <= posted_amount(line.account_id) + line.amount <= BALANCE_MAX:
             raise BalanceOverflowError(f"account {line.account_id} balance would overflow")
 
 
