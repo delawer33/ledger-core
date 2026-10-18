@@ -46,7 +46,7 @@ src/ledger/             единственное приложение; моду�
   accounts/             Account, системные счета (system.py), admin.py с Posted/Available
   balances/             BalanceSnapshot
   posting/              Transaction, Entry
-  idempotency/          IdempotencyRecord, service.py: run_idempotent (ADR-0009), мутации оборачиваются в него
+  idempotency/          IdempotencyRecord, service.py: run_idempotent (ADR-0009), все мутирующие эндпоинты (включая POST /accounts) идут через него
   holds/                Hold; service.py (place, capture, release, expire), tasks.py (expire_holds)
   outbox/               OutboxEvent, DeliveredEvent; contract.py, relay.py, consumer.py, tasks.py (контракт: docs/outbox.md)
   reconciliation/       Incident, service.py (reconcile, close_incident), tasks.py (reconcile_task)

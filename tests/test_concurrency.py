@@ -157,6 +157,25 @@ def test_repeated_idempotent_request_posts_one_transaction_with_identical_replie
     assert_invariants()
 
 
+def test_repeated_idempotent_account_creation_makes_one_account_with_identical_replies() -> None:
+    body = json.dumps({"currency": "RUB", "type": "asset", "owner": "racer"})
+    headers = {"Idempotency-Key": "same-account-key", "X-Source-System": "storefront"}
+
+    def work(_: int) -> tuple[int, bytes]:
+        response = Client().post(
+            "/api/v1/accounts", data=body, content_type="application/json", headers=headers
+        )
+        return response.status_code, response.content
+
+    replies = run_threads(REPEATERS, work)
+
+    assert len(set(replies)) == 1
+    assert replies[0][0] == 201
+    assert Account.objects.filter(owner="racer").count() == 1
+    assert BalanceSnapshot.objects.filter(account__owner="racer").count() == 1
+    assert_invariants()
+
+
 def test_holds_and_transfers_on_one_account_never_push_available_below_zero() -> None:
     funds = 1_000
     account = _funded(funds)

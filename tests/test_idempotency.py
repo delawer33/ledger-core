@@ -6,11 +6,14 @@ import pytest
 from django.db import connection
 from django.test import Client
 
+from ledger.accounts import service as accounts_service
+from ledger.accounts.models import Account
+from ledger.errors import LedgerError
 from ledger.idempotency.models import IdempotencyRecord
 from ledger.outbox.models import OutboxEvent
 from ledger.posting.models import Transaction
 
-from .test_transfers_api import _account, _fund, _headers, _transfer
+from .test_transfers_api import _account, _fund, _headers, _post, _transfer
 
 pytestmark = pytest.mark.django_db
 
@@ -117,3 +120,52 @@ def test_parallel_requests_with_one_key_post_one_transaction() -> None:
     assert {r.status_code for r in results} == {201}
     assert len({r.content for r in results}) == 1
     assert Transaction.objects.count() == 1
+
+
+_ACCOUNT_BODY = {"currency": "RUB", "type": "asset", "owner": "o"}
+
+
+def test_repeated_account_creation_replays_the_first_reply_and_creates_one_account(
+    client: Client,
+) -> None:
+    headers = _headers("acc1")
+
+    first = _post(client, "/api/v1/accounts", _ACCOUNT_BODY, **headers)
+    second = _post(client, "/api/v1/accounts", _ACCOUNT_BODY, **headers)
+
+    assert first.status_code == 201
+    _same(first, second)
+    assert Account.objects.count() == 1
+
+
+def test_account_key_reused_with_another_body_is_409_and_creates_nothing(client: Client) -> None:
+    headers = _headers("acc1")
+    assert _post(client, "/api/v1/accounts", _ACCOUNT_BODY, **headers).status_code == 201
+
+    response = _post(client, "/api/v1/accounts", {**_ACCOUNT_BODY, "owner": "other"}, **headers)
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "idempotency_key_reused"
+    assert Account.objects.count() == 1
+
+
+def test_repeat_of_a_rejected_account_creation_returns_the_same_error(
+    client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    headers = _headers("acc1")
+    calls: list[int] = []
+
+    def reject(**_: Any) -> Account:
+        calls.append(1)
+        raise LedgerError("owner is not allowed", code="owner_forbidden")
+
+    monkeypatch.setattr(accounts_service, "create_account", reject)
+
+    first = _post(client, "/api/v1/accounts", _ACCOUNT_BODY, **headers)
+    second = _post(client, "/api/v1/accounts", _ACCOUNT_BODY, **headers)
+
+    assert first.status_code == 422
+    assert first.json()["code"] == "owner_forbidden"
+    _same(first, second)
+    assert len(calls) == 1
+    assert Account.objects.count() == 0
