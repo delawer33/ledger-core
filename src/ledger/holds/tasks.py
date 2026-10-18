@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.tasks import task
 
-from ledger.chains.service import ensure_chain, is_current, schedule_next
+from ledger.chains.service import ensure_chain, heartbeat, is_current, schedule_next
 from ledger.holds.service import expire_due_holds
 
 CHAIN_NAME = "hold-expiry"
@@ -21,7 +21,8 @@ def expire_holds(token: str | None = None) -> int:
         return 0
     interval = settings.HOLD_EXPIRY_INTERVAL_SECONDS
     try:
-        return expire_due_holds()
+        with heartbeat(CHAIN_NAME, token):
+            return expire_due_holds()
     finally:
         schedule_next(CHAIN_NAME, token, expire_holds, interval=interval)
 

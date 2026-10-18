@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.tasks import task
 
-from ledger.chains.service import ensure_chain, is_current, schedule_next
+from ledger.chains.service import ensure_chain, heartbeat, is_current, schedule_next
 from ledger.reconciliation.service import reconcile
 
 CHAIN_NAME = "reconciliation"
@@ -18,7 +18,11 @@ def reconcile_task(token: str | None = None) -> dict[str, int]:
     if token is not None and not is_current(CHAIN_NAME, token):
         return {"accounts_checked": 0, "incidents_opened": 0}
     try:
-        result = reconcile()
+        if token is None:
+            result = reconcile()
+        else:
+            with heartbeat(CHAIN_NAME, token):
+                result = reconcile()
     finally:
         if token is not None:
             schedule_next(

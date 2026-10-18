@@ -59,8 +59,9 @@ services:
     networks:
       - app_network
     healthcheck:
-      # Unhealthy when the loop has not completed a pass for three minutes.
-      test: ["CMD-SHELL", "test -n \"$$(find /tmp/scheduler-heartbeat -mmin -3 2>/dev/null)\""]
+      # Unhealthy when the loop has not completed a pass for three poll intervals plus a minute
+      # (SCHEDULER_POLL_SECONDS, read inside the container).
+      test: ["CMD-SHELL", "test -n \"$$(find /tmp/scheduler-heartbeat -newermt \"$$((3 * $${SCHEDULER_POLL_SECONDS:-15} + 60)) seconds ago\" 2>/dev/null)\""]
       interval: 30s
       timeout: 5s
       retries: 3

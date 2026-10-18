@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.tasks import task
 
-from ledger.chains.service import ensure_chain, is_current, schedule_next
+from ledger.chains.service import ensure_chain, heartbeat, is_current, schedule_next
 from ledger.outbox.consumer import record_delivery
 from ledger.outbox.relay import relay_batch
 
@@ -20,7 +20,8 @@ def relay_outbox(token: str = "") -> int:
         return 0
     interval = settings.OUTBOX_RELAY_INTERVAL_SECONDS
     try:
-        delivered = relay_batch(record_delivery)
+        with heartbeat(CHAIN_NAME, token):
+            delivered = relay_batch(record_delivery)
     except Exception:
         schedule_next(CHAIN_NAME, token, relay_outbox, interval=interval)
         raise

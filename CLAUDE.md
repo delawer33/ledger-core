@@ -16,8 +16,7 @@ docker compose up -d db          # Postgres на 127.0.0.1:55433 (не 5432)
 export DATABASE_URL=postgres://ledger:ledger@127.0.0.1:55433/ledger
 uv run python manage.py migrate  # применить миграции
 uv run python manage.py seed     # системные счета; суперпользователь только если заданы и DJANGO_SUPERUSER_USERNAME, и _PASSWORD; идемпотентно
-uv run python manage.py start_outbox_relay   # запустить цепочку relay, если живой нет (идемпотентно, годится для cron)
-uv run python manage.py run_scheduler        # планировщик: держит живыми цепочки истечения холдов, сверки и relay (ADR-0016); --once для одного прохода
+uv run python manage.py run_scheduler        # штатный способ запуска цепочек (холды, сверка, relay); переживает рестарт БД; держит живыми цепочки истечения холдов, сверки и relay (ADR-0016); --once для одного прохода
 uv run python manage.py db_worker            # воркер: выполняет задачи очереди; нужен вместе с run_scheduler
 uv run python manage.py runserver   # или preview "api" из .claude/launch.json
 uv run python manage.py makemigrations   # после правки моделей; применённые миграции не редактировать

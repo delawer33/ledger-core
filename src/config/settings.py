@@ -104,7 +104,7 @@ RECONCILIATION_INTERVAL_SECONDS = int(os.environ.get("RECONCILIATION_INTERVAL_SE
 SCHEDULER_POLL_SECONDS = int(os.environ.get("SCHEDULER_POLL_SECONDS", "15"))
 
 # A chain is presumed dead this long after its next pass was due; a pass must finish within it.
-TASK_CHAIN_GRACE_SECONDS = int(os.environ.get("TASK_CHAIN_GRACE_SECONDS", "60"))
+TASK_CHAIN_GRACE_SECONDS = float(os.environ.get("TASK_CHAIN_GRACE_SECONDS", "60"))
 
 USE_TZ = True
 TIME_ZONE = "UTC"
