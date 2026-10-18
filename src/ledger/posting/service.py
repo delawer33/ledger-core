@@ -8,7 +8,7 @@ from django.db.models import F
 
 from ledger.accounts.models import Account, AccountType
 from ledger.balances.models import BalanceSnapshot
-from ledger.balances.service import available_from_posted
+from ledger.balances.service import available_amount
 from ledger.errors import (
     AccountNotFoundError,
     CurrencyMismatchError,
@@ -117,13 +117,8 @@ def _validate_funds(lines: Sequence[EntryLine], accounts: dict[int, Account]) ->
         for line in lines
         if accounts[line.account_id].type in NON_NEGATIVE_TYPES
     }
-    posted_by_account = dict(
-        BalanceSnapshot.objects.filter(account_id__in=constrained).values_list(
-            "account_id", "posted_amount"
-        )
-    )
     for account_id, amount in constrained.items():
-        if available_from_posted(posted_by_account[account_id]) + amount < 0:
+        if available_amount(account_id) + amount < 0:
             raise InsufficientFundsError(f"account {account_id} would go below zero")
 
 

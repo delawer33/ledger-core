@@ -4,6 +4,7 @@ from django.db.models import Sum
 
 from ledger.accounts.models import Account
 from ledger.balances.models import BalanceSnapshot
+from ledger.holds.models import Hold, HoldStatus
 from ledger.posting.models import Entry
 
 
@@ -13,9 +14,22 @@ class Balance:
     available: int
 
 
-def available_from_posted(posted: int) -> int:
-    """Available Balance is Posted minus active holds; there are no holds yet."""
-    return posted
+def active_holds_total(account_id: int) -> int:
+    total = Hold.objects.filter(account_id=account_id, status=HoldStatus.ACTIVE).aggregate(
+        total=Sum("amount")
+    )["total"]
+    return int(total or 0)
+
+
+def posted_amount(account_id: int) -> int:
+    return int(
+        BalanceSnapshot.objects.values_list("posted_amount", flat=True).get(account_id=account_id)
+    )
+
+
+def available_amount(account_id: int) -> int:
+    """Available Balance is Posted minus the sum of active holds."""
+    return posted_amount(account_id) - active_holds_total(account_id)
 
 
 def recount_posted(account_id: int) -> int:
@@ -31,4 +45,4 @@ def get_balance(account: Account) -> Balance:
     )
     if not trusted:
         posted = recount_posted(account.pk)
-    return Balance(posted=posted, available=available_from_posted(posted))
+    return Balance(posted=posted, available=posted - active_holds_total(account.pk))

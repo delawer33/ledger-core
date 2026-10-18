@@ -45,7 +45,7 @@ src/ledger/             единственное приложение; моду�
   balances/             BalanceSnapshot
   posting/              Transaction, Entry
   idempotency/          IdempotencyRecord, service.py: run_idempotent (ADR-0009), мутации оборачиваются в него
-  holds/                Hold
+  holds/                Hold; service.py (place, capture, release, expire), tasks.py (expire_holds)
   outbox/               OutboxEvent, DeliveredEvent
   reconciliation/       Incident, service.py (reconcile, close_incident), tasks.py (reconcile_task)
   api.py                NinjaAPI под /api/v1: монтирует роутеры областей, маппит LedgerError в ответ

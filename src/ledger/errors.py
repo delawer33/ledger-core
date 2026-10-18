@@ -67,3 +67,20 @@ class IncidentNotFoundError(LedgerError):
 
 class IncidentNoteRequiredError(LedgerError):
     code = "incident_note_required"
+
+
+class HoldNotFoundError(LedgerError):
+    code = "hold_not_found"
+    status = HTTPStatus.NOT_FOUND
+
+
+class HoldNotActiveError(LedgerError):
+    code = "hold_not_active"
+
+
+class CaptureExceedsHoldError(LedgerError):
+    code = "capture_exceeds_hold"
+
+
+class InvalidHoldError(LedgerError):
+    code = "invalid_hold"
