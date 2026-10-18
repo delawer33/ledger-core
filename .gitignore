@@ -3,3 +3,9 @@
 .venv/
 __pycache__/
 .orchestrate/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.py[cod]
+dist/
+*.egg-info/

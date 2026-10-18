@@ -1,0 +1,66 @@
+# Local gate; CI runs the same tools from the same pyproject.toml config.
+# Install once per clone: `uv run pre-commit install` (installs every type listed below).
+# commit: fast checks only. push: mypy and tests. merge/checkout: venv follows uv.lock, because
+# Cursor and an activated venv do not go through `uv run`, which would sync on its own.
+default_install_hook_types: [pre-commit, commit-msg, pre-push, post-merge, post-checkout]
+default_stages: [pre-commit]
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+
+  # Secrets are caught before they reach history; CI re-scans the whole history.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.3
+    hooks:
+      - id: gitleaks
+
+  # Conventional Commits: feat|fix|docs|refactor|test|chore|ci|build|perf|style|revert(scope)!: text
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix --force-exclude
+        language: system
+        types: [python]
+        pass_filenames: true
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format --force-exclude
+        language: system
+        types: [python]
+        pass_filenames: true
+      - id: mypy
+        name: mypy --strict
+        entry: uv run mypy
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-push]
+      - id: pytest
+        name: pytest
+        # tests need a reachable DATABASE_URL (see CLAUDE.md).
+        entry: uv run pytest -q
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+      - id: uv-sync
+        name: uv sync
+        entry: uv sync
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [post-merge, post-checkout]

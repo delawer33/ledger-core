@@ -1,0 +1,48 @@
+services:
+  api:
+    container_name: ledger_core_api
+    build: .
+    env_file: .env
+    environment:
+      # Inside the network the database is `db:5432`; the .env value is for host-side runs.
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${API_PORT_EXTERNAL}:${API_PORT_INTERNAL}"
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${API_PORT_INTERNAL}/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  db:
+    container_name: ledger_core_db
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      # Loopback only, and never 5432: that port is often taken by another local Postgres.
+      - "127.0.0.1:${DB_PORT_EXTERNAL}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+networks:
+  app_network:
+    driver: bridge
+
+volumes:
+  pgdata:
