@@ -16,7 +16,9 @@ docker compose up -d db          # Postgres на 127.0.0.1:55433 (не 5432)
 export DATABASE_URL=postgres://ledger:ledger@127.0.0.1:55433/ledger
 uv run python manage.py migrate  # применить миграции
 uv run python manage.py seed     # системные счета; суперпользователь только если заданы и DJANGO_SUPERUSER_USERNAME, и _PASSWORD; идемпотентно
-uv run python manage.py start_outbox_relay   # запустить цепочку relay, если живой нет (идемпотентно, годится для cron); выполняет `manage.py db_worker`
+uv run python manage.py start_outbox_relay   # запустить цепочку relay, если живой нет (идемпотентно, годится для cron)
+uv run python manage.py run_scheduler        # планировщик: держит живыми цепочки истечения холдов, сверки и relay (ADR-0016); --once для одного прохода
+uv run python manage.py db_worker            # воркер: выполняет задачи очереди; нужен вместе с run_scheduler
 uv run python manage.py runserver   # или preview "api" из .claude/launch.json
 uv run python manage.py makemigrations   # после правки моделей; применённые миграции не редактировать
 uv run pytest                    # тесты идут в настоящий Postgres; один: uv run pytest tests/test_x.py -k name
@@ -25,7 +27,7 @@ uv run ruff check . && uv run ruff format --check .
 uv run mypy                      # strict + django-stubs; конфиг в pyproject.toml
 uv run deptry src
 uv run pre-commit install        # один раз на клон
-docker compose up --build        # весь стек: Postgres + API на http://localhost:8000
+docker compose up --build        # весь стек: Postgres + API на http://localhost:8000 + воркер + планировщик (истечение холдов, сверка, relay без ручных команд)
 ```
 
 Проверки целиком (как в CI):
@@ -48,10 +50,11 @@ src/ledger/             единственное приложение; моду�
   balances/             BalanceSnapshot
   posting/              Transaction, Entry
   idempotency/          IdempotencyRecord, service.py: run_idempotent (ADR-0009), все мутирующие эндпоинты (включая POST /accounts) идут через него
-  holds/                Hold; service.py (place, capture, release, expire), tasks.py (expire_holds)
+  holds/                Hold; service.py (place, capture, release, expire), tasks.py (expire_holds, цепочка hold-expiry)
   chains/               TaskChain, service.py: ensure_chain / schedule_next, одна живая цепочка самопланирующейся задачи (ADR-0012)
   outbox/               OutboxEvent, DeliveredEvent; contract.py, service.py (emit: единственная запись событий), relay.py, consumer.py, tasks.py (контракт: docs/outbox.md)
-  reconciliation/       Incident, service.py (reconcile, close_incident), tasks.py (reconcile_task); при открытом Incident движок и холды берут Posted из Entry (ADR-0015)
+  reconciliation/       Incident, service.py (reconcile, close_incident), tasks.py (reconcile_task, цепочка reconciliation); при открытом Incident движок и холды берут Posted из Entry (ADR-0015)
+  scheduler.py          SCHEDULED: реестр периодических цепочек, ensure_scheduled (ADR-0016); команда run_scheduler
   invariants.py         check_invariants / assert_invariants: сумма Posted = 0, Available >= 0, снапшот = пересчёт (ADR-0013)
   api.py                NinjaAPI под /api/v1: монтирует роутеры областей, маппит LedgerError в ответ
   limits.py             лимиты входа: MAX_AMOUNT, MAX_TTL_SECONDS, MAX_HEADER_LENGTH (ADR-0014)
@@ -83,6 +86,9 @@ docs/adr/               решения
   Выпустил миграцию — добавь её файл в `deny`; новые файлы миграций создавать можно.
 - Фоновые задачи через `django.tasks` с бэкендом `django-tasks-db` (ADR-0005), без брокера.
 - Сервисы — функции, принимающие зависимости явно; классы — только при реальном состоянии.
+- Расписание (ADR-0016) задают env-интервалы в секундах: `HOLD_EXPIRY_INTERVAL_SECONDS` (30), `RECONCILIATION_INTERVAL_SECONDS` (3600),
+  `OUTBOX_RELAY_INTERVAL_SECONDS` (5), `SCHEDULER_POLL_SECONDS` (15, как часто планировщик проверяет цепочки). Новая периодическая
+  задача это цепочка (ADR-0012) плюс запись в `scheduler.SCHEDULED`; второго механизма не заводить.
 - Конфигурация только через env (`config/settings.py`); `.env` не коммитится, `.env.example` — всегда.
 - Ожидаемые ошибки — типизированное доменное исключение с машинным кодом правила; `except Exception`
   не ловить.

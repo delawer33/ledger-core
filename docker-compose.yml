@@ -2,6 +2,7 @@ services:
   api:
     container_name: ledger_core_api
     build: .
+    restart: unless-stopped
     env_file: .env
     environment:
       # Inside the network the database is `db:5432`; the .env value is for host-side runs.
@@ -20,6 +21,50 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+  # The same image as the api, running the periodic work (ADR-0016). Both wait for the api because
+  # its start applies the migrations. Nothing here publishes a port.
+  worker:
+    container_name: ledger_core_worker
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "manage.py", "db_worker"]
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      # db_worker has no heartbeat; this proves the process can still reach the database.
+      test: ["CMD", "python", "manage.py", "check", "--database", "default"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 15s
+
+  scheduler:
+    container_name: ledger_core_scheduler
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "manage.py", "run_scheduler", "--heartbeat-file", "/tmp/scheduler-heartbeat"]
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      # Unhealthy when the loop has not completed a pass for three minutes.
+      test: ["CMD-SHELL", "test -n \"$$(find /tmp/scheduler-heartbeat -mmin -3 2>/dev/null)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   db:
     container_name: ledger_core_db

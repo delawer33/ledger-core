@@ -96,6 +96,13 @@ TASKS = {"default": {"BACKEND": "django_tasks_db.DatabaseBackend", "QUEUES": ["d
 # Pause between outbox relay passes; the relay task reschedules itself with this delay.
 OUTBOX_RELAY_INTERVAL_SECONDS = int(os.environ.get("OUTBOX_RELAY_INTERVAL_SECONDS", "5"))
 
+# Pauses between passes of the other scheduled tasks (ADR-0016): hold expiry and reconciliation.
+HOLD_EXPIRY_INTERVAL_SECONDS = int(os.environ.get("HOLD_EXPIRY_INTERVAL_SECONDS", "30"))
+RECONCILIATION_INTERVAL_SECONDS = int(os.environ.get("RECONCILIATION_INTERVAL_SECONDS", "3600"))
+
+# How often `run_scheduler` calls `ensure_chain` for every scheduled task.
+SCHEDULER_POLL_SECONDS = int(os.environ.get("SCHEDULER_POLL_SECONDS", "15"))
+
 # A chain is presumed dead this long after its next pass was due; a pass must finish within it.
 TASK_CHAIN_GRACE_SECONDS = int(os.environ.get("TASK_CHAIN_GRACE_SECONDS", "60"))
 
